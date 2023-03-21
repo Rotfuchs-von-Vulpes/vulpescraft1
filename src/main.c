@@ -103,7 +103,7 @@ const char *fragmentShaderSource =
 		"}";
 
 unsigned int shaderProgram[2];
-unsigned int texture1, texture2;
+unsigned int texture1, texture2, texture3;
 unsigned int texture;
 int textureCount = 1;
 int shaderCount = 0;
@@ -281,6 +281,21 @@ vec3 cubePositions[] = {
 		{1.5f, 0.2f, -1.5f},
 		{-1.3f, 1.0f, -1.5f}};
 
+double currentTime;
+
+void drawCube(int index)
+{
+		mat4 model = GLM_MAT4_IDENTITY_INIT;
+		glm_translate(model, cubePositions[index]);
+		float angle = 20.0f * index;
+		glm_rotate(model, 50.0f / 360 * 3.14 * (float)currentTime + angle, (vec3){0.5f, 1.0f, 0.0f});
+		glUseProgram(shaderProgram[0]);
+		unsigned int transformLoc = glGetUniformLocation(shaderProgram[0], "model");
+		glUniformMatrix4fv(transformLoc, 1, false, (float *)model);
+
+		glDrawArrays(GL_TRIANGLES, 0, 36);
+}
+
 void init()
 {
 	float vertices[] = {
@@ -364,7 +379,6 @@ void init()
 	glCompileShader(fragmentShader);
 
 	loadShader(vertexShader, fragmentShader);
-	// loadShader(vertexShader, fragmentShader);
 
 	vertexShader = glCreateShader(GL_VERTEX_SHADER);
 
@@ -380,13 +394,11 @@ void init()
 
 	texture1 = loadTexture("../src/default_box.png");
 	texture2 = loadTexture("../src/default_iron_frame.png");
+	texture3 = loadTexture("../src/default_sand.png");
 
 	glUseProgram(shaderProgram[0]);
-	// glUniform1i(glGetUniformLocation(shaderProgram[0], "texture"), 0);
 	glUniform1i(glGetUniformLocation(shaderProgram[0], "materialDiffuse"), 0);
 	glUniform1i(glGetUniformLocation(shaderProgram[0], "materialSpecular"), 1);
-	// glUseProgram(shaderProgram[1]);
-	// glUniform1i(glGetUniformLocation(shaderProgram[1], "texture"), 1);
 
 	glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
 
@@ -395,10 +407,7 @@ void init()
 
 void render()
 {
-	double currentTime = glfwGetTime();
-
-	// mat4 model = GLM_MAT4_IDENTITY_INIT;
-	// glm_rotate(model, 50.0f / 360 * 3.14 * (float)currentTime, (vec3){0.5f, 1.0f, 0.0f});
+	currentTime = glfwGetTime();
 
 	vec3 center;
 	glm_vec3_add(cameraPos, cameraFront, center);
@@ -426,34 +435,32 @@ void render()
 	uniformLoc = glGetUniformLocation(shaderProgram[0], "projection");
 	glUniformMatrix4fv(uniformLoc, 1, false, (float *)projection);
 
-	// glUseProgram(shaderProgram[1]);
-	// uniformLoc = glGetUniformLocation(shaderProgram[1], "view");
-	// glUniformMatrix4fv(uniformLoc, 1, false, (float *)view);
-	// uniformLoc = glGetUniformLocation(shaderProgram[1], "projection");
-	// glUniformMatrix4fv(uniformLoc, 1, false, (float *)projection);
-
 	glClear(GL_COLOR_BUFFER_BIT);
 
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 	glBindVertexArray(cubeVAO);
-	for (unsigned int i = 0; i < 10; i++)
+	// bind diffuse map
+	glActiveTexture(GL_TEXTURE0);
+	glBindTexture(GL_TEXTURE_2D, texture3);
+	// remove specular map
+	glActiveTexture(GL_TEXTURE1);
+	glBindTexture(GL_TEXTURE_2D, 0);
+
+	for (unsigned int i = 0; i < 5; i++)
 	{
-		// bind diffuse map
-		glActiveTexture(GL_TEXTURE0);
-		glBindTexture(GL_TEXTURE_2D, texture1);
-		// bind specular map
-		glActiveTexture(GL_TEXTURE1);
-		glBindTexture(GL_TEXTURE_2D, texture2);
+		drawCube(i);
+	}
 
-		mat4 model = GLM_MAT4_IDENTITY_INIT;
-		glm_translate(model, cubePositions[i]);
-		float angle = 20.0f * i;
-		glm_rotate(model, 50.0f / 360 * 3.14 * (float)currentTime + angle, (vec3){0.5f, 1.0f, 0.0f});
-		glUseProgram(shaderProgram[0]);
-		unsigned int transformLoc = glGetUniformLocation(shaderProgram[0], "model");
-		glUniformMatrix4fv(transformLoc, 1, false, (float *)model);
+	// bind diffuse map
+	glActiveTexture(GL_TEXTURE0);
+	glBindTexture(GL_TEXTURE_2D, texture1);
+	// bind specular map
+	glActiveTexture(GL_TEXTURE1);
+	glBindTexture(GL_TEXTURE_2D, texture2);
 
-		glDrawArrays(GL_TRIANGLES, 0, 36);
+	for (unsigned int i = 5; i < 10; i++)
+	{
+		drawCube(i);
 	}
 
 	// fps counter
