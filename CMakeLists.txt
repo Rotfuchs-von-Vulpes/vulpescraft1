@@ -1,34 +1,17 @@
 cmake_minimum_required(VERSION 3.0)
 
-set(PROJECT vulpes)
-set(lib OpenGL32)
+project(vulpes)
 
-project(${PROJECT})
+add_subdirectory(libs/glad)
+add_subdirectory(libs/cimgui/backend_test/example_glfw_opengl3)
 
-# GLFW
-add_subdirectory(lib/glfw)
-set(GLFW_INCLUDE lib/glfw/include)
-list(APPEND lib glfw)
-
-# GLAD
-add_library(glad lib/glad/src/glad.c)
-set(GLAD_INCLUDE lib/glad/include)
-target_include_directories(glad PRIVATE ${GLAD_INCLUDE})
-list(APPEND lib glad)
-
-# CGLM
-set(CGLM_INCLUDE lib/cglm/include)
-
-# STB
-set(STB_INCLUDE lib/stb)
-
-# program
-file(GLOB SRC src/*.c)
-add_executable(${PROJECT} ${SRC})
-target_link_libraries(${PROJECT} ${lib})
+add_executable(vulpes src/main.c)
+target_link_libraries(vulpes cimgui glad glfw cimgui)
 target_include_directories(
-	${PROJECT} PRIVATE
-	${CGLM_INCLUDE}
-	${GLAD_INCLUDE}
-	${GLFW_INCLUDE}
-	${STB_INCLUDE})
+	vulpes PRIVATE
+	libs/cimgui
+	libs/cimgui/generator/output
+	libs/glad/include
+	libs/glfw/include
+	libs/cglm/include
+	libs/stb)
