@@ -430,13 +430,6 @@ int chunkCount = 0;
 int chunkLimit = 1024;
 chunkNode *chunks = NULL;
 
-int meshNumber = 0;
-int meshLimit = 1024;
-meshCube *meshCubes = NULL;
-int verticesBufferCount = 0;
-int verticesBufferLimit = 9 * 1024;
-float *verticesBuffer = NULL;
-
 bool hasAir(chunkNode *chunkG, int x, int y, int z)
 {
 	if (y >= 256)
@@ -656,13 +649,8 @@ void generateMesh()
 						{
 							vec3 position = {x, y, z};
 							glm_vec3_copy(position, cube.position);
-							// meshCubes[meshNumber++] = cube;
 							chunkG->meshCubes[chunkG->meshCount++] = cube;
-							// if (meshNumber + 1 >= meshLimit - 1)
-							// {
-							// 	meshLimit *= 2;
-							// 	meshCubes = (meshCube *)realloc(meshCubes, sizeof(meshCube) * meshLimit);
-							// }
+
 							if (chunkG->meshCount + 1 >= chunkG->meshLimit - 1)
 							{
 								chunkG->meshLimit *= 2;
@@ -763,8 +751,8 @@ chunkNode *generateChunkNode(const int posX, const int posZ)
 
 	chunkPtr->meshCount = 0;
 	chunkPtr->verticesBufferCount = 0;
-	chunkPtr->meshLimit = meshLimit;
-	chunkPtr->verticesBufferLimit = verticesBufferLimit;
+	chunkPtr->meshLimit = 1024;
+	chunkPtr->verticesBufferLimit = 9 * 1024;
 
 	chunkPtr->meshCubes = (meshCube *)malloc(chunkPtr->meshLimit * sizeof(meshCube));
 	chunkPtr->verticesBuffer = (float *)malloc(chunkPtr->verticesBufferLimit * sizeof(float));
@@ -782,20 +770,21 @@ chunkNode *generateChunkNode(const int posX, const int posZ)
 	return chunkPtr;
 }
 
-void generateNextChunk(ht *dimension, const int posX, const int posZ, int viewDistance)
+int viewDistance = 4;
+
+void generateManyChunks(ht *dimension, int posX, int posZ)
 {
-	if (hasChunk(dimension, posX, posZ) || viewDistance <= 0)
-		return;
+	for (int i = -viewDistance + posX; i <= viewDistance + posX; i++)
+	{
+		for (int j = -viewDistance + posZ; j <= viewDistance + posZ; j++)
+		{
+			if (hasChunk(dimension, i, j)) continue;
 
-	chunkNode *chunkPtr = generateChunkNode(posX, posZ);
-	int index = chunkPtr->index;
-	addChunk(dimension, posX, posZ, index);
-
-	viewDistance--;
-	generateNextChunk(dimension, posX + 1, posZ, viewDistance);
-	generateNextChunk(dimension, posX - 1, posZ, viewDistance);
-	generateNextChunk(dimension, posX, posZ + 1, viewDistance);
-	generateNextChunk(dimension, posX, posZ - 1, viewDistance);
+			chunkNode *chunkPtr = generateChunkNode(i, j);
+			int index = chunkPtr->index;
+			addChunk(dimension, i, j, index);
+		}
+	}
 }
 
 void atualizeMovement(void)
@@ -805,21 +794,40 @@ void atualizeMovement(void)
 	cameraChunkPos[0] = cameraPos[0] - cameraChunk[0];
 	cameraChunkPos[1] = cameraPos[2] - cameraChunk[1];
 
-	// if (lastChunk[0] != cameraChunk[0] || lastChunk[1] != cameraChunk[1])
-	// {
-	// 	generateNextChunk(&dimension, cameraChunk[0], cameraChunk[1], 5);
-	// 	generateChunkSides(&dimension);
-	// 	for (int i = 0; i < chunkCount; i++)
-	// 	{
-	// 		chunkVertice chunk = chunksD[i];
-	// 		generateMesh(&chunk, chunk.posX, chunk.posZ);
-	// 	}
-	// 	lastChunk[0] = cameraChunk[0];
-	// 	lastChunk[1] = cameraChunk[1];
+	if (lastChunk[0] != cameraChunk[0] || lastChunk[1] != cameraChunk[1])
+	{
+		int lastChunkCount = chunkCount;
+		printf("antes: %i\n", lastChunkCount);
 
-	// 	glBindBuffer(GL_ARRAY_BUFFER, VBO);
-	// 	glBufferData(GL_ARRAY_BUFFER, verticesBufferCount * sizeof(float), verticesBuffer, GL_STATIC_DRAW);
-	// }
+		generateManyChunks(&dimension, cameraChunk[0], cameraChunk[1]);
+		generateChunkSides(&dimension);
+		generateMesh();
+		generateVertices();
+
+		lastChunk[0] = cameraChunk[0];
+		lastChunk[1] = cameraChunk[1];
+
+		for (int i = lastChunkCount; i <= chunkCount; i++)
+		{
+			printf("depois: %i\n", lastChunkCount);
+			chunkNode *chunkG = &chunks[i];
+			glGenVertexArrays(1, &chunkG->VAO);
+			glGenBuffers(1, &chunkG->VBO);
+
+			glBindBuffer(GL_ARRAY_BUFFER, chunkG->VBO);
+			glBufferData(GL_ARRAY_BUFFER, chunkG->verticesBufferCount * sizeof(float), chunkG->verticesBuffer, GL_STATIC_DRAW);
+
+			glBindVertexArray(chunkG->VAO);
+			glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 9 * sizeof(float), (void *)0);
+			glEnableVertexAttribArray(0);
+			glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 9 * sizeof(float), (void *)(3 * sizeof(float)));
+			glEnableVertexAttribArray(1);
+			glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 9 * sizeof(float), (void *)(6 * sizeof(float)));
+			glEnableVertexAttribArray(2);
+			glVertexAttribPointer(3, 1, GL_FLOAT, GL_FALSE, 9 * sizeof(float), (void *)(8 * sizeof(float)));
+			glEnableVertexAttribArray(3);
+		}
+	}
 }
 
 ImGuiIO *ioptr;
@@ -873,7 +881,6 @@ void gui_update(GLFWwindow *window)
 	igNewFrame();
 
 	igBegin("Test", NULL, 0);
-	igText("Vertices to view: %f", (float)verticesBufferCount / 9);
 	igInputInt3("Position:", position, 0);
 	igText(
 			"Cube: %i:%i",
@@ -906,7 +913,7 @@ void init(void)
 	// meshCubes = (meshCube *)malloc(meshLimit * sizeof(meshCube));
 	// verticesBuffer = (float *)malloc(verticesBufferLimit * sizeof(float));
 
-	generateNextChunk(&dimension, 0, 0, 5);
+	generateManyChunks(&dimension, 0, 0);
 	generateChunkSides(&dimension);
 	generateMesh();
 	generateVertices();
@@ -1060,11 +1067,11 @@ void render()
 		lastTime += 1.0;
 	}
 
-	// if (walked)
-	// {
-	// 	atualizeMovement();
-	// 	walked = false;
-	// }
+	if (walked)
+	{
+		atualizeMovement();
+		walked = false;
+	}
 }
 
 int main(int argc, char **args)
