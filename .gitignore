@@ -3,3 +3,4 @@ build/
 libs/
 src/shaders/
 CMakeList.txt
+imgui.ini
