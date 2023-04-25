@@ -76,6 +76,7 @@ const char *lightCasterFShader =
 		"uniform Light light;\n"
 		"void main()\n"
 		"{\n"
+		" if (texture(textures,vec3(TexCoords, TextureID)).a < .5) discard;\n"
 		" vec3 ambient=light.ambient*texture(textures,vec3(TexCoords, TextureID)).rgb;\n"
 		" vec3 norm=normalize(Normal);\n"
 		" vec3 lightDir=normalize(-light.direction);\n"
@@ -433,6 +434,10 @@ typedef struct chunkNode
 	float *verticesBuffer;
 	unsigned int VBO;
 	unsigned int VAO;
+	int indicesBufferCount;
+	int indicesBufferLimit;
+	int *indicesBuffer;
+	unsigned int EBO;
 } chunkNode;
 
 int chunkCount = 0;
@@ -441,17 +446,36 @@ chunkNode *chunks = NULL;
 int chunksTVCount = -1;
 int chunksToView[512];
 
-bool hasAir(chunkNode *chunkG, int x, int y, int z)
+typedef enum {solid, transparent, empty, opaque} renderType;
+
+typedef struct texturesId {
+	int top;
+	int down;
+	int east;
+	int west;
+	int north;
+	int south;
+} texturesId;
+
+typedef struct block {
+	renderType type;
+	int textures[6];
+	char *name;
+} block;
+
+block blocks[1024][1024];
+
+bool hasAir(chunkNode *c, int x, int y, int z, int sideId[2])
 {
 	if (y >= 256)
 		return true;
 
 	if (x >= 16)
 	{
-		if (chunkG->east >= 0)
+		if (c->east >= 0)
 		{
 			x = 0;
-			chunkG = &chunks[chunkG->east];
+			c = &chunks[c->east];
 		}
 		else
 		{
@@ -460,10 +484,10 @@ bool hasAir(chunkNode *chunkG, int x, int y, int z)
 	}
 	else if (x < 0)
 	{
-		if (chunkG->west >= 0)
+		if (c->west >= 0)
 		{
 			x = 15;
-			chunkG = &chunks[chunkG->west];
+			c = &chunks[c->west];
 		}
 		else
 		{
@@ -472,10 +496,10 @@ bool hasAir(chunkNode *chunkG, int x, int y, int z)
 	}
 	if (z >= 16)
 	{
-		if (chunkG->north >= 0)
+		if (c->north >= 0)
 		{
 			z = 0;
-			chunkG = &chunks[chunkG->north];
+			c = &chunks[c->north];
 		}
 		else
 		{
@@ -484,10 +508,10 @@ bool hasAir(chunkNode *chunkG, int x, int y, int z)
 	}
 	else if (z < 0)
 	{
-		if (chunkG->south >= 0)
+		if (c->south >= 0)
 		{
 			z = 15;
-			chunkG = &chunks[chunkG->south];
+			c = &chunks[c->south];
 		}
 		else
 		{
@@ -500,124 +524,132 @@ bool hasAir(chunkNode *chunkG, int x, int y, int z)
 		return false;
 	}
 
-	return chunkG->chunk[x][y][z][0] == 0;
+	int id[2];
+	id[0] = c->chunk[x][y][z][0];
+	id[1] = c->chunk[x][y][z][1];
+
+	return id[0] == 0 || blocks[id[0]][id[1]].type == empty || blocks[id[0]][id[1]].type == transparent && sideId[0] != id[0];
 }
 
-void addFloat(chunkNode *chunkG, float number)
+void addFloat(chunkNode *c, float number)
 {
-	chunkG->verticesBuffer[chunkG->verticesBufferCount++] = number;
+	c->verticesBuffer[c->verticesBufferCount++] = number;
 
-	if (chunkG->verticesBufferCount + 1 >= chunkG->verticesBufferLimit - 1)
+	if (c->verticesBufferCount + 1 >= c->verticesBufferLimit - 1)
 	{
-		chunkG->verticesBufferLimit *= 2;
-		chunkG->verticesBuffer = (float *)realloc(chunkG->verticesBuffer, sizeof(float) * chunkG->verticesBufferLimit);
+		c->verticesBufferLimit *= 2;
+		c->verticesBuffer = (float *)realloc(c->verticesBuffer, sizeof(float) * c->verticesBufferLimit);
 	}
 }
 
-void addVertice(chunkNode *chunkG, float posX, float posY, float posZ, float normalX, float NormalY, float NormalZ, float textureCX, float textureCY, float textureID)
+int addVertex(chunkNode *c, float posX, float posY, float posZ, float normalX, float NormalY, float NormalZ, float textureCX, float textureCY, float textureID)
 {
-	addFloat(chunkG, posX);
-	addFloat(chunkG, posY);
-	addFloat(chunkG, posZ);
-	addFloat(chunkG, normalX);
-	addFloat(chunkG, NormalY);
-	addFloat(chunkG, NormalZ);
-	addFloat(chunkG, textureCX);
-	addFloat(chunkG, textureCY);
-	addFloat(chunkG, textureID);
+	addFloat(c, posX);
+	addFloat(c, posY);
+	addFloat(c, posZ);
+	addFloat(c, normalX);
+	addFloat(c, NormalY);
+	addFloat(c, NormalZ);
+	addFloat(c, textureCX);
+	addFloat(c, textureCY);
+	addFloat(c, textureID);
+
+	return c->verticesBufferCount / 9 - 1;
+}
+
+void addIndex(chunkNode *c, int index)
+{
+	c->indicesBuffer[c->indicesBufferCount++] = index;
+
+	if (c->indicesBufferCount + 1 >= c->indicesBufferLimit - 1)
+	{
+		c->indicesBufferLimit *= 2;
+		c->indicesBuffer = (int *)realloc(c->indicesBuffer, sizeof(int) * c->indicesBufferLimit);
+	}
+}
+
+void addIndices(chunkNode *c, int i1, int i2, int i3, int j1, int j2, int j3)
+{
+	addIndex(c, i1);
+	addIndex(c, i2);
+	addIndex(c, i3);
+	addIndex(c, j1);
+	addIndex(c, j2);
+	addIndex(c, j3);
 }
 
 void generateVertices(chunkNode *chunkNodes, int init, int count)
 {
 	for (int i = init; i < count; i++)
 	{
-		chunkNode *chunkG = &chunkNodes[i];
+		chunkNode *c = &chunkNodes[i];
 
-		for (int j = 0; j < chunkG->meshCount; j++)
+		for (int j = 0; j < c->meshCount; j++)
 		{
-			meshCube cube = chunkG->meshCubes[j];
+			meshCube cube = c->meshCubes[j];
 			vec3 pos;
 			glm_vec3_copy(cube.position, pos);
 			glm_vec3_add(pos, (vec3){cube.chunk[0] * 16, 0, cube.chunk[1] * 16}, pos);
-			int top = 0;
-			int side = 0;
-			int down = 0;
-			if (cube.ID[0] == 1)
-			{
-				top = 2;
-				side = 2;
-				down = 2;
-			}
-			else if (cube.ID[0] == 2)
-			{
-				if (cube.ID[1] == 0)
-				{
-					top = 5;
-					side = 5;
-					down = 5;
-				}
-				else if (cube.ID[1] == 1)
-				{
-					top = 3;
-					side = 4;
-					down = 5;
-				}
-			}
+			block b = blocks[cube.ID[0]][cube.ID[1]];
+			int top = b.textures[0];
+			int side = b.textures[2];
+			int down = b.textures[1];
+
+			// printf("%i:%i, %i\n", cube.ID[0], cube.ID[1], b.textures[0]);
 
 			if (cube.faces[0])
 			{
-				addVertice(chunkG, pos[0] - .5, pos[1] + .5, pos[2] - .5, 0, 1, 0, 0, 0, top);
-				addVertice(chunkG, pos[0] - .5, pos[1] + .5, pos[2] + .5, 0, 1, 0, 0, 1, top);
-				addVertice(chunkG, pos[0] + .5, pos[1] + .5, pos[2] + .5, 0, 1, 0, 1, 1, top);
-				addVertice(chunkG, pos[0] + .5, pos[1] + .5, pos[2] + .5, 0, 1, 0, 1, 1, top);
-				addVertice(chunkG, pos[0] + .5, pos[1] + .5, pos[2] - .5, 0, 1, 0, 1, 0, top);
-				addVertice(chunkG, pos[0] - .5, pos[1] + .5, pos[2] - .5, 0, 1, 0, 0, 0, top);
-				
+				int i1 = addVertex(c, pos[0] - .5, pos[1] + .5, pos[2] - .5, 0, 1, 0, 0, 0, top);
+				int i2 = addVertex(c, pos[0] - .5, pos[1] + .5, pos[2] + .5, 0, 1, 0, 0, 1, top);
+				int j1 = addVertex(c, pos[0] + .5, pos[1] + .5, pos[2] + .5, 0, 1, 0, 1, 1, top);
+				int j2 = addVertex(c, pos[0] + .5, pos[1] + .5, pos[2] - .5, 0, 1, 0, 1, 0, top);
+
+				addIndices(c, i1, i2, j1, j1, j2, i1);
 			}
 			if (cube.faces[1] && pos[1] > 0)
 			{
-				addVertice(chunkG, pos[0] - .5, pos[1] - .5, pos[2] - .5, 0, -1, 0, 0, 0, down);
-				addVertice(chunkG, pos[0] + .5, pos[1] - .5, pos[2] - .5, 0, -1, 0, 1, 0, down);
-				addVertice(chunkG, pos[0] + .5, pos[1] - .5, pos[2] + .5, 0, -1, 0, 1, 1, down);
-				addVertice(chunkG, pos[0] + .5, pos[1] - .5, pos[2] + .5, 0, -1, 0, 1, 1, down);
-				addVertice(chunkG, pos[0] - .5, pos[1] - .5, pos[2] + .5, 0, -1, 0, 0, 1, down);
-				addVertice(chunkG, pos[0] - .5, pos[1] - .5, pos[2] - .5, 0, -1, 0, 0, 0, down);
+				int i1 = addVertex(c, pos[0] - .5, pos[1] - .5, pos[2] - .5, 0, -1, 0, 0, 0, down);
+				int i2 = addVertex(c, pos[0] + .5, pos[1] - .5, pos[2] - .5, 0, -1, 0, 1, 0, down);
+				int j1 = addVertex(c, pos[0] + .5, pos[1] - .5, pos[2] + .5, 0, -1, 0, 1, 1, down);
+				int j2 = addVertex(c, pos[0] - .5, pos[1] - .5, pos[2] + .5, 0, -1, 0, 0, 1, down);
+
+				addIndices(c, i1, i2, j1, j1, j2, i1);
 			}
 			if (cube.faces[2])
 			{
-				addVertice(chunkG, pos[0] - .5, pos[1] - .5, pos[2] + .5, 0, 0, 1, 0, 0, side);
-				addVertice(chunkG, pos[0] + .5, pos[1] - .5, pos[2] + .5, 0, 0, 1, 1, 0, side);
-				addVertice(chunkG, pos[0] + .5, pos[1] + .5, pos[2] + .5, 0, 0, 1, 1, 1, side);
-				addVertice(chunkG, pos[0] + .5, pos[1] + .5, pos[2] + .5, 0, 0, 1, 1, 1, side);
-				addVertice(chunkG, pos[0] - .5, pos[1] + .5, pos[2] + .5, 0, 0, 1, 0, 1, side);
-				addVertice(chunkG, pos[0] - .5, pos[1] - .5, pos[2] + .5, 0, 0, 1, 0, 0, side);
+				int i1 = addVertex(c, pos[0] - .5, pos[1] - .5, pos[2] + .5, 0, 0, 1, 0, 0, side);
+				int i2 = addVertex(c, pos[0] + .5, pos[1] - .5, pos[2] + .5, 0, 0, 1, 1, 0, side);
+				int j1 = addVertex(c, pos[0] + .5, pos[1] + .5, pos[2] + .5, 0, 0, 1, 1, 1, side);
+				int j2 = addVertex(c, pos[0] - .5, pos[1] + .5, pos[2] + .5, 0, 0, 1, 0, 1, side);
+
+				addIndices(c, i1, i2, j1, j1, j2, i1);
 			}
 			if (cube.faces[3])
 			{
-				addVertice(chunkG, pos[0] - .5, pos[1] - .5, pos[2] - .5, 0, 0, -1, 0, 0, side);
-				addVertice(chunkG, pos[0] - .5, pos[1] + .5, pos[2] - .5, 0, 0, -1, 0, 1, side);
-				addVertice(chunkG, pos[0] + .5, pos[1] + .5, pos[2] - .5, 0, 0, -1, 1, 1, side);
-				addVertice(chunkG, pos[0] + .5, pos[1] + .5, pos[2] - .5, 0, 0, -1, 1, 1, side);
-				addVertice(chunkG, pos[0] + .5, pos[1] - .5, pos[2] - .5, 0, 0, -1, 1, 0, side);
-				addVertice(chunkG, pos[0] - .5, pos[1] - .5, pos[2] - .5, 0, 0, -1, 0, 0, side);
+				int i1 = addVertex(c, pos[0] - .5, pos[1] - .5, pos[2] - .5, 0, 0, -1, 0, 0, side);
+				int i2 = addVertex(c, pos[0] - .5, pos[1] + .5, pos[2] - .5, 0, 0, -1, 0, 1, side);
+				int j1 = addVertex(c, pos[0] + .5, pos[1] + .5, pos[2] - .5, 0, 0, -1, 1, 1, side);
+				int j2 = addVertex(c, pos[0] + .5, pos[1] - .5, pos[2] - .5, 0, 0, -1, 1, 0, side);
+
+				addIndices(c, i1, i2, j1, j1, j2, i1);
 			}
 			if (cube.faces[4])
 			{
-				addVertice(chunkG, pos[0] + .5, pos[1] - .5, pos[2] - .5, 1, 0, 0, 0, 0, side);
-				addVertice(chunkG, pos[0] + .5, pos[1] + .5, pos[2] - .5, 1, 0, 0, 0, 1, side);
-				addVertice(chunkG, pos[0] + .5, pos[1] + .5, pos[2] + .5, 1, 0, 0, 1, 1, side);
-				addVertice(chunkG, pos[0] + .5, pos[1] + .5, pos[2] + .5, 1, 0, 0, 1, 1, side);
-				addVertice(chunkG, pos[0] + .5, pos[1] - .5, pos[2] + .5, 1, 0, 0, 1, 0, side);
-				addVertice(chunkG, pos[0] + .5, pos[1] - .5, pos[2] - .5, 1, 0, 0, 0, 0, side);
+				int i1 = addVertex(c, pos[0] + .5, pos[1] - .5, pos[2] - .5, 1, 0, 0, 0, 0, side);
+				int i2 = addVertex(c, pos[0] + .5, pos[1] + .5, pos[2] - .5, 1, 0, 0, 0, 1, side);
+				int j1 = addVertex(c, pos[0] + .5, pos[1] + .5, pos[2] + .5, 1, 0, 0, 1, 1, side);
+				int j2 = addVertex(c, pos[0] + .5, pos[1] - .5, pos[2] + .5, 1, 0, 0, 1, 0, side);
+
+				addIndices(c, i1, i2, j1, j1, j2, i1);
 			}
 			if (cube.faces[5])
 			{
-				addVertice(chunkG, pos[0] - .5, pos[1] - .5, pos[2] - .5, -1, 0, 0, 0, 0, side);
-				addVertice(chunkG, pos[0] - .5, pos[1] - .5, pos[2] + .5, -1, 0, 0, 1, 0, side);
-				addVertice(chunkG, pos[0] - .5, pos[1] + .5, pos[2] + .5, -1, 0, 0, 1, 1, side);
-				addVertice(chunkG, pos[0] - .5, pos[1] + .5, pos[2] + .5, -1, 0, 0, 1, 1, side);
-				addVertice(chunkG, pos[0] - .5, pos[1] + .5, pos[2] - .5, -1, 0, 0, 0, 1, side);
-				addVertice(chunkG, pos[0] - .5, pos[1] - .5, pos[2] - .5, -1, 0, 0, 0, 0, side);
+				int i1 = addVertex(c, pos[0] - .5, pos[1] - .5, pos[2] - .5, -1, 0, 0, 0, 0, side);
+				int i2 = addVertex(c, pos[0] - .5, pos[1] - .5, pos[2] + .5, -1, 0, 0, 1, 0, side);
+				int j1 = addVertex(c, pos[0] - .5, pos[1] + .5, pos[2] + .5, -1, 0, 0, 1, 1, side);
+				int j2 = addVertex(c, pos[0] - .5, pos[1] + .5, pos[2] - .5, -1, 0, 0, 0, 1, side);
+
+				addIndices(c, i1, i2, j1, j1, j2, i1);
 			}
 		}
 	}
@@ -627,9 +659,9 @@ void generateMesh(chunkNode *chunkNodes, int init, int count)
 {
 	for (int i = init; i < count; i++)
 	{
-		chunkNode *chunkG = &chunkNodes[i];
-		int posX = chunkG->posX;
-		int posZ = chunkG->posZ;
+		chunkNode *c = &chunkNodes[i];
+		int posX = c->posX;
+		int posZ = c->posZ;
 
 		for (int x = 0; x < 16; x++)
 		{
@@ -638,24 +670,24 @@ void generateMesh(chunkNode *chunkNodes, int init, int count)
 				for (int y = 0; y < 256; y++)
 				{
 					meshCube cube = {
-							.ID = {chunkG->chunk[x][y][z][0], chunkG->chunk[x][y][z][1]},
+							.ID = {c->chunk[x][y][z][0], c->chunk[x][y][z][1]},
 							.faces = {false, false, false, false, false, false},
 							.chunk = {posX, posZ}};
 
-					if (hasAir(chunkG, x, y, z))
+					if (cube.ID[0] == 0)
 						continue;
 
-					if (hasAir(chunkG, x, y + 1, z))
+					if (hasAir(c, x, y + 1, z, cube.ID))
 						cube.faces[0] = true;
-					if (hasAir(chunkG, x, y - 1, z))
+					if (hasAir(c, x, y - 1, z, cube.ID))
 						cube.faces[1] = true;
-					if (hasAir(chunkG, x, y, z + 1))
+					if (hasAir(c, x, y, z + 1, cube.ID))
 						cube.faces[2] = true;
-					if (hasAir(chunkG, x, y, z - 1))
+					if (hasAir(c, x, y, z - 1, cube.ID))
 						cube.faces[3] = true;
-					if (hasAir(chunkG, x + 1, y, z))
+					if (hasAir(c, x + 1, y, z, cube.ID))
 						cube.faces[4] = true;
-					if (hasAir(chunkG, x - 1, y, z))
+					if (hasAir(c, x - 1, y, z, cube.ID))
 						cube.faces[5] = true;
 
 					for (int i = 0; i < 6; i++)
@@ -664,12 +696,12 @@ void generateMesh(chunkNode *chunkNodes, int init, int count)
 						{
 							vec3 position = {x, y, z};
 							glm_vec3_copy(position, cube.position);
-							chunkG->meshCubes[chunkG->meshCount++] = cube;
+							c->meshCubes[c->meshCount++] = cube;
 
-							if (chunkG->meshCount + 1 >= chunkG->meshLimit - 1)
+							if (c->meshCount + 1 >= c->meshLimit - 1)
 							{
-								chunkG->meshLimit *= 2;
-								chunkG->meshCubes = (meshCube *)realloc(chunkG->meshCubes, sizeof(meshCube) * chunkG->meshLimit);
+								c->meshLimit *= 2;
+								c->meshCubes = (meshCube *)realloc(c->meshCubes, sizeof(meshCube) * c->meshLimit);
 							}
 							break;
 						}
@@ -749,12 +781,10 @@ float fbm(vec2 st) {
 		amplitude *= .5;
 	}
 
-	// printf("%f\n", value);
-
 	return value;
 }
 
-void generateChunk(chunkNode *chunkG, int posX, int posZ)
+void generateChunk(chunkNode *c, int posX, int posZ)
 {
 	if (chunkCount + 1 >= chunkLimit - 1)
 	{
@@ -774,23 +804,23 @@ void generateChunk(chunkNode *chunkG, int posX, int posZ)
 			{
 				if (y < height - 5)
 				{
-					chunkG->chunk[x][y][z][0] = 1;
-					chunkG->chunk[x][y][z][1] = 0;
+					c->chunk[x][y][z][0] = 1;
+					c->chunk[x][y][z][1] = 0;
 				}
 				else if (y < height)
 				{
-					chunkG->chunk[x][y][z][0] = 2;
-					chunkG->chunk[x][y][z][1] = 0;
+					c->chunk[x][y][z][0] = 2;
+					c->chunk[x][y][z][1] = 0;
 				}
 				else if (y == height)
 				{
-					chunkG->chunk[x][y][z][0] = 2;
-					chunkG->chunk[x][y][z][1] = 1;
+					c->chunk[x][y][z][0] = 2;
+					c->chunk[x][y][z][1] = 1;
 				}
 				else
 				{
-					chunkG->chunk[x][y][z][0] = 0;
-					chunkG->chunk[x][y][z][1] = 0;
+					c->chunk[x][y][z][0] = 0;
+					c->chunk[x][y][z][1] = 0;
 				}
 			}
 		}
@@ -845,9 +875,11 @@ void generateChunkNode(ht *dimension, const int posX, const int posZ, chunkNode 
 	chunkPtr->verticesBufferCount = 0;
 	chunkPtr->meshLimit = 1024;
 	chunkPtr->verticesBufferLimit = 9 * 1024;
+	chunkPtr->indicesBufferLimit = 6 * 1024;
 
 	chunkPtr->meshCubes = (meshCube *)malloc(chunkPtr->meshLimit * sizeof(meshCube));
 	chunkPtr->verticesBuffer = (float *)malloc(chunkPtr->verticesBufferLimit * sizeof(float));
+	chunkPtr->indicesBuffer = (int *)malloc(chunkPtr->indicesBufferLimit * sizeof(int));
 
 	chunkPtr->index = *count - 1;
 	chunkPtr->north = -1;
@@ -861,15 +893,19 @@ void generateChunkNode(ht *dimension, const int posX, const int posZ, chunkNode 
 	addChunk(dimension, posX, posZ, chunkPtr->index);
 }
 
-void addVBO(chunkNode *chunkG)
+void addVBO(chunkNode *c)
 {
-	glGenVertexArrays(1, &chunkG->VAO);
-	glGenBuffers(1, &chunkG->VBO);
+	glGenVertexArrays(1, &c->VAO);
+	glGenBuffers(1, &c->VBO);
+	glGenBuffers(1, &c->EBO);
 
-	glBindBuffer(GL_ARRAY_BUFFER, chunkG->VBO);
-	glBufferData(GL_ARRAY_BUFFER, chunkG->verticesBufferCount * sizeof(float), chunkG->verticesBuffer, GL_STATIC_DRAW);
+	glBindBuffer(GL_ARRAY_BUFFER, c->VBO);
+	glBufferData(GL_ARRAY_BUFFER, c->verticesBufferCount * sizeof(float), c->verticesBuffer, GL_STATIC_DRAW);
 
-	glBindVertexArray(chunkG->VAO);
+	glBindVertexArray(c->VAO);
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, c->EBO);
+	glBufferData(GL_ELEMENT_ARRAY_BUFFER, c->indicesBufferCount * sizeof(int), c->indicesBuffer, GL_STATIC_DRAW);
+
 	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 9 * sizeof(float), (void *)0);
 	glEnableVertexAttribArray(0);
 	glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 9 * sizeof(float), (void *)(3 * sizeof(float)));
@@ -998,8 +1034,8 @@ void atualizeMovement(void)
 
 		for (int i = lastChunkCount; i <= chunkCount; i++)
 		{
-			chunkNode *chunkG = &chunks[i];
-			addVBO(chunkG);
+			chunkNode *c = &chunks[i];
+			addVBO(c);
 		}
 
 		chunksTVCount = -1;
@@ -1104,10 +1140,33 @@ INCBIN(grass, "V:/projetos/apisOrLibs/opengl/vulpescraft1/src/textures/default_g
 INCBIN(dirt_with_grass, "V:/projetos/apisOrLibs/opengl/vulpescraft1/src/textures/default_dirt_with_grass.png");
 INCBIN(dirt, "V:/projetos/apisOrLibs/opengl/vulpescraft1/src/textures/default_dirt.png");
 INCBIN(sand, "V:/projetos/apisOrLibs/opengl/vulpescraft1/src/textures/default_sand.png");
+INCBIN(oak_leaves, "V:/projetos/apisOrLibs/opengl/vulpescraft1/src/textures/default_oak_leaves.png");
+INCBIN(glass, "V:/projetos/apisOrLibs/opengl/vulpescraft1/src/textures/default_glass.png");
+
+#define LOAD_TEXTURE(name) \
+	texturesData[textureCount++] = stbi_load_from_memory((const stbi_uc *)&incbin_ ## name ## _start, (char*)&incbin_ ## name ## _end - (char*)&incbin_ ## name ## _start, &width, &height, &comp, 0);
 
 void init(void)
 {
 	chunks = (chunkNode *)malloc(chunkLimit * sizeof(chunkNode));
+	
+	stbi_set_flip_vertically_on_load(true);
+	int width, height, comp;
+	LOAD_TEXTURE(box)
+	LOAD_TEXTURE(iron_frame)
+	LOAD_TEXTURE(stone)
+	LOAD_TEXTURE(grass)
+	LOAD_TEXTURE(dirt_with_grass)
+	LOAD_TEXTURE(dirt)
+	LOAD_TEXTURE(sand)
+	LOAD_TEXTURE(oak_leaves)
+	LOAD_TEXTURE(glass)
+
+	blocks[1][0] = (block){.name = "Stone", .type = solid, .textures = {2, 2, 2, 2, 2, 2}};
+	blocks[2][0] = (block){.name = "Dirt", .type = solid, .textures = {5, 5, 5, 5, 5, 5}};
+	blocks[2][1] = (block){.name = "Dirt with grass", .type = solid, .textures = {3, 5, 4, 4, 4, 4}};
+	blocks[3][0] = (block){.name = "Oak leaves", .type = empty, .textures = {7, 7, 7, 7, 7, 7}};
+	blocks[4][0] = (block){.name = "Glass", .type = transparent, .textures = {8, 8, 8, 8, 8, 8}};
 
 	generateManyChunks(&dimension, 0, 0, chunks, &chunkCount, &chunkLimit);
 	generateChunkSides(&dimension, chunks, 0, chunkCount);
@@ -1120,9 +1179,9 @@ void init(void)
 
 	for (int i = 0; i < chunkCount; i++)
 	{
-		chunkNode *chunkG = &chunks[i];
-		addVBO(chunkG);
-		chunksToView[chunksTVCount++] = chunkG->index;
+		chunkNode *c = &chunks[i];
+		addVBO(c);
+		chunksToView[chunksTVCount++] = c->index;
 	}
 
 	unsigned int vertexShader;
@@ -1163,16 +1222,6 @@ void init(void)
 	// set texture filtering parameters
 	glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
 	glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-	stbi_set_flip_vertically_on_load(true);
-	
-	int width, height, comp;
-	texturesData[textureCount++] = stbi_load_from_memory((const stbi_uc *)&incbin_box_start, (char *)&incbin_box_end - (char *)&incbin_box_start, &width, &height, &comp, 0);
-	texturesData[textureCount++] = stbi_load_from_memory((const stbi_uc *)&incbin_iron_frame_start, (char*)&incbin_iron_frame_end - (char*)&incbin_iron_frame_start, &width, &height, &comp, 0);
-	texturesData[textureCount++] = stbi_load_from_memory((const stbi_uc *)&incbin_stone_start, (char*)&incbin_stone_end - (char*)&incbin_stone_start, &width, &height, &comp, 0);
-	texturesData[textureCount++] = stbi_load_from_memory((const stbi_uc *)&incbin_grass_start, (char*)&incbin_grass_end - (char*)&incbin_grass_start, &width, &height, &comp, 0);
-	texturesData[textureCount++] = stbi_load_from_memory((const stbi_uc *)&incbin_dirt_with_grass_start, (char*)&incbin_dirt_with_grass_end - (char*)&incbin_dirt_with_grass_start, &width, &height, &comp, 0);
-	texturesData[textureCount++] = stbi_load_from_memory((const stbi_uc *)&incbin_dirt_start, (char*)&incbin_dirt_end - (char*)&incbin_dirt_start, &width, &height, &comp, 0);
-	texturesData[textureCount++] = stbi_load_from_memory((const stbi_uc *)&incbin_sand_start, (char*)&incbin_sand_end - (char*)&incbin_sand_start, &width, &height, &comp, 0);
 
 	void *data = malloc(4 * 16 * 16 * textureCount);
 	for (size_t i = 0; i < textureCount; i++)
@@ -1240,7 +1289,8 @@ void render()
 	for (int i = 0; i <= chunksTVCount; i++)
 	{
 		glBindVertexArray(chunks[chunksToView[i]].VAO);
-		glDrawArrays(GL_TRIANGLES, 0, chunks[chunksToView[i]].verticesBufferCount / 8);
+		glDrawElements(GL_TRIANGLES, chunks[chunksToView[i]].indicesBufferCount, GL_UNSIGNED_INT, 0);
+		glBindVertexArray(0);
 	}
 
 	// fps counter
