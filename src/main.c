@@ -294,14 +294,24 @@ void resizeCallback(GLFWwindow *window, int width, int height)
 {
 	screenWidth = width;
 	screenHeight = height;
-	glViewport(0, 0, screenWidth, screenHeight);
+	glViewport(0, 0, width, height);
 	glm_perspective(glm_rad(fov), (float)width / (float)height, 0.1f, 1000.0f, projection);
+
 	glUseProgram(shaderProgram[0]);
 	glUniformMatrix4fv(uniformProjection, 1, false, (float *)projection);
+
 	glUseProgram(shaderProgram[1]);
 	mapScale = 500. / width;
 	glUniform3f(uniformMapScale, mapScale, (float)width / (float)height * mapScale, 0);
 	glUniform3f(uniformOffset, (width - 300.) / width, (height - 300.) / height, 0);
+
+	glUseProgram(shaderProgram[2]);
+	glBindTexture(GL_TEXTURE_2D, textureColorbuffer);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, NULL);
+
+  glBindRenderbuffer(GL_RENDERBUFFER, rbo);
+  glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, screenWidth, screenHeight);
+  glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, rbo);
 }
 
 void mouseCallback(GLFWwindow *window, double xposIn, double yposIn)
@@ -1626,9 +1636,6 @@ void init(void)
 
 	glGenFramebuffers(1, &fbo);
 	glBindFramebuffer(GL_FRAMEBUFFER, fbo);
-
-	glGenTextures(1, &fboTexture);
-	glBindTexture(GL_TEXTURE_2D, fboTexture);
 		
 	glGenTextures(1, &textureColorbuffer);
 	glBindTexture(GL_TEXTURE_2D, textureColorbuffer);
