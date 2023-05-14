@@ -216,28 +216,30 @@ float deltaTime = 0.0f; // time between current frame and last frame
 float lastFrame = 0.0f;
 
 bool cursorDisabled = true;
-bool firstKey = true;
+bool firstKeyE = true;
 
 bool walked = false;
 
 
 float mapScale = 500. / SCREEN_WIDTH_INIT;
+bool mapview = false;
+bool firstKeyJ = true;
 
 void processInput(GLFWwindow *window)
 {
 	if (glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS)
 	{
-		if (firstKey)
+		if (firstKeyE)
 		{
-			firstKey = false;
+			firstKeyE = false;
 		}
 	}
 
 	if (glfwGetKey(window, GLFW_KEY_E) == GLFW_RELEASE)
 	{
-		if (!firstKey)
+		if (!firstKeyE)
 		{
-			firstKey = true;
+			firstKeyE = true;
 
 			if (cursorDisabled)
 			{
@@ -248,6 +250,35 @@ void processInput(GLFWwindow *window)
 			{
 				glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 				cursorDisabled = true;
+			}
+		}
+	}
+
+	if (glfwGetKey(window, GLFW_KEY_J) == GLFW_PRESS)
+	{
+		if (firstKeyJ)
+		{
+			firstKeyJ = false;
+		}
+	}
+
+	if (glfwGetKey(window, GLFW_KEY_J) == GLFW_RELEASE)
+	{
+		if (!firstKeyJ)
+		{
+			firstKeyJ = true;
+
+			if (mapview)
+			{
+				glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+				cursorDisabled = true;
+				mapview = false;
+			}
+			else
+			{
+				glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+				cursorDisabled = false;
+				mapview = true;
 			}
 		}
 	}
@@ -1722,65 +1753,72 @@ void init(void)
 
 double currentTime;
 
-void render()
+void render(void)
 {
 	currentTime = glfwGetTime();
 
-	vec3 center;
-	glm_vec3_add(cameraPos, cameraFront, center);
-	glm_lookat(cameraPos, center, cameraUp, view);
-
-	glBindFramebuffer(GL_FRAMEBUFFER, fbo);
-	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); // we're not using the stencil buffer now
-	glEnable(GL_DEPTH_TEST);
-
-	glUseProgram(shaderProgram[0]);
-
-	glUniformMatrix4fv(uniformView, 1, false, (float *)view);
-	glUniformMatrix4fv(uniformProjection, 1, false, (float *)projection);
-
-	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
-	glActiveTexture(GL_TEXTURE0);
-	glBindTexture(GL_TEXTURE_2D_ARRAY, texture);
-
-	mat4 model = GLM_MAT4_IDENTITY_INIT;
-	glUseProgram(shaderProgram[0]);
-	for (int i = 0; i <= chunksTVCount; i++)
+	if (mapview)
 	{
-		glUniformMatrix4fv(uniformTransform, 1, false, (float *)model);
-		glBindVertexArray(chunks[chunksToView[i]].VAO);
-		glDrawElements(GL_TRIANGLES, chunks[chunksToView[i]].indicesBufferCount, GL_UNSIGNED_INT, 0);
+		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); 
+	}
+	else
+	{
+		vec3 center;
+		glm_vec3_add(cameraPos, cameraFront, center);
+		glm_lookat(cameraPos, center, cameraUp, view);
+
+		glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); 
+		glEnable(GL_DEPTH_TEST);
+
+		glUseProgram(shaderProgram[0]);
+
+		glUniformMatrix4fv(uniformView, 1, false, (float *)view);
+		glUniformMatrix4fv(uniformProjection, 1, false, (float *)projection);
+
+		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+		glActiveTexture(GL_TEXTURE0);
+		glBindTexture(GL_TEXTURE_2D_ARRAY, texture);
+
+		mat4 model = GLM_MAT4_IDENTITY_INIT;
+		glUseProgram(shaderProgram[0]);
+		for (int i = 0; i <= chunksTVCount; i++)
+		{
+			glUniformMatrix4fv(uniformTransform, 1, false, (float *)model);
+			glBindVertexArray(chunks[chunksToView[i]].VAO);
+			glDrawElements(GL_TRIANGLES, chunks[chunksToView[i]].indicesBufferCount, GL_UNSIGNED_INT, 0);
+			glBindVertexArray(0);
+		}
+
+		glBindFramebuffer(GL_FRAMEBUFFER, 0);
+		glDisable(GL_DEPTH_TEST);
+		glClear(GL_COLOR_BUFFER_BIT);
+
+		glUseProgram(shaderProgram[2]);
+		glBindVertexArray(quadVAO);
+		glBindTexture(GL_TEXTURE_2D, textureColorbuffer);
+		glDrawArrays(GL_TRIANGLES, 0, 6);
+
+		glUseProgram(shaderProgram[1]);
+		glClear(GL_DEPTH_BUFFER_BIT);
+
+		glActiveTexture(GL_TEXTURE0);
+
+		glBindTexture(GL_TEXTURE_2D, megaMapTexture);
+		glBindVertexArray(mapVAO);
+		glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
 		glBindVertexArray(0);
+
+		if (walked)
+		{
+			atualizeMovement();
+			float posX = mapScale * cameraChunkPos[1] / 140;
+			float posY = mapScale * cameraChunkPos[0] / 140;
+			glUniform3f(uniformRealPos, posX, posY, 0);
+			walked = false;
+		}
 	}
-
-	glUseProgram(shaderProgram[1]);
-	glClear(GL_DEPTH_BUFFER_BIT);
-
-	glActiveTexture(GL_TEXTURE0);
-
-	glBindTexture(GL_TEXTURE_2D, megaMapTexture);
-	glBindVertexArray(mapVAO);
-	glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
-	glBindVertexArray(0);
-
-	glBindFramebuffer(GL_FRAMEBUFFER, 0);
-	glDisable(GL_DEPTH_TEST);
-	glClear(GL_COLOR_BUFFER_BIT);
-
-	if (walked)
-	{
-		atualizeMovement();
-		float posX = mapScale * cameraChunkPos[1] / 140;
-		float posY = mapScale * cameraChunkPos[0] / 140;
-		glUniform3f(uniformRealPos, posX, posY, 0);
-		walked = false;
-	}
-
-	glUseProgram(shaderProgram[2]);
-	glBindVertexArray(quadVAO);
-	glBindTexture(GL_TEXTURE_2D, textureColorbuffer);
-	glDrawArrays(GL_TRIANGLES, 0, 6);
 
 	// fps counter
 	++nbFrames;
