@@ -6,6 +6,7 @@
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include <stb_image_write.h>
 #include <cglm/cglm.h>
+#include <time.h>
 // #define CIMGUI_DEFINE_ENUMS_AND_STRUCTS
 // #define CIMGUI_USE_GLFW
 // #define CIMGUI_USE_OPENGL3
@@ -896,8 +897,7 @@ void generateChunk(chunkNode *c, int posX, int posZ)
 				}
 				else
 				{
-					c->chunk[x][y][z][0] = 0;
-					c->chunk[x][y][z][1] = 0;
+					break;
 				}
 			}
 		}
@@ -1150,6 +1150,8 @@ void generateChunkNode(ht *dimension, const int posX, const int posZ, chunkNode 
 
 	chunkPtr->heightMap = (float *)malloc(16 * 16 * 4 * sizeof(float));
 	chunkPtr->height = (int *)malloc(16 * 16 * sizeof(int));
+
+	memset(chunkPtr->chunk, 0, sizeof(chunkPtr->chunk));
 
 	generateChunk(chunkPtr, posX, posZ);
 	addChunk(dimension, posX, posZ, chunkPtr->index);
@@ -1436,8 +1438,15 @@ color calcColor(unsigned int textureId)
 	};
 }
 
+#define SEC_TO_NS(sec) ((sec)*1000000000)
+
+uint64_t nanoseconds;
+struct timespec ts_init;
+struct timespec ts_end;
+
 void init(void)
 {
+	timespec_get(&ts_init, TIME_UTC);
 	chunks = (chunkNode *)malloc(chunkLimit * sizeof(chunkNode));
 	
 	stbi_set_flip_vertically_on_load(true);
@@ -1699,6 +1708,12 @@ void init(void)
 
 	
 	printf("%i\n", glGetError());
+	
+	timespec_get(&ts_end, TIME_UTC);
+
+	nanoseconds = SEC_TO_NS((uint64_t)ts_end.tv_sec) + (uint64_t)ts_end.tv_nsec - SEC_TO_NS((uint64_t)ts_init.tv_sec) + (uint64_t)ts_init.tv_nsec;
+
+	printf("Tempo para gerar as chunks: %llu", nanoseconds);
 }
 
 double currentTime;
