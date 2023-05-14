@@ -56,7 +56,11 @@ const char *fragmentShaderSrc =
 		"uniform sampler2D screenTexture;\n"
 		"void main()\n"
 		"{\n"
-		" FragColor = texture(screenTexture, TexCoords);\n"
+		" vec2 uv = TexCoords;\n"
+    " uv *=  1.0 - uv.yx;\n"
+    " float vig = uv.x*uv.y * 15.0;\n"
+    " vig = pow(vig, .125);\n"
+		" FragColor = texture(screenTexture, TexCoords) * vig;\n"
 		"}";
 const char *mapVShader =
 		"#version 330 core\n"
