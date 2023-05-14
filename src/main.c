@@ -36,8 +36,44 @@
 	extern __attribute__((aligned(16))) const char incbin_ ## name ## _start[]; \
 	extern                              const char incbin_ ## name ## _end[]
 
-unsigned int mapVBO, mapVAO, mapEBO;
+unsigned int mapVBO, mapVAO, quadVBO, quadVAO, mapEBO, fbo, rbo;
 
+const char *vertexShaderSrc = 
+		"#version 330 core\n"
+		"layout (location = 0) in vec2 aPos;\n"
+		"layout (location = 1) in vec2 aTexCoords;\n"
+		"out vec2 TexCoords;\n"
+		"void main()\n"
+		"{\n"
+		" gl_Position = vec4(aPos.x, aPos.y, 0.0, 1.0); \n"
+		" TexCoords = aTexCoords;\n"
+		"}";
+const char *fragmentShaderSrc =
+		"#version 330 core\n"
+		"out vec4 FragColor;\n"
+		"in vec2 TexCoords;\n"
+		"uniform sampler2D screenTexture;\n"
+		"void main()\n"
+		"{\n"
+		" FragColor = texture(screenTexture, TexCoords);\n"
+		"}";
+const char *mapVShader =
+		"#version 330 core\n"
+		"layout(location=0) in vec3 aPos;\n"
+		"layout(location=1) in vec2 aTexCoord;\n"
+		"out vec2 TexCoord;\n"
+		"uniform vec3 realPos;\n"
+		"uniform vec3 scale;\n"
+		"uniform vec3 offset;\n"
+		"uniform float direction;\n"
+		"void main()\n"
+		"{\n"
+		" vec3 p = aPos.xyz - realPos;\n"
+    " float new_x = p.x*cos(direction) - p.y*sin(direction);\n"
+    " float new_y = p.y*cos(direction) + p.x*sin(direction);\n"
+		"	gl_Position = vec4(vec3(new_x, new_y, p.z) * scale + offset, 1.0);\n"
+		"	TexCoord = vec2(aTexCoord.x, aTexCoord.y);\n"
+		"}";
 const char *mapFShader =
 		"#version 330 core\n"
 		"in vec2 TexCoord;\n"
@@ -63,22 +99,26 @@ const char *mapFShader =
 		"  FragColor=texture(texture0, TexCoord);\n"
 		" }\n"
 		"}";
-const char *mapVShader =
+const char *lightCasterVShader =
 		"#version 330 core\n"
-		"layout(location=0) in vec3 aPos;\n"
-		"layout(location=1) in vec2 aTexCoord;\n"
-		"out vec2 TexCoord;\n"
-		"uniform vec3 realPos;\n"
-		"uniform vec3 scale;\n"
-		"uniform vec3 offset;\n"
-		"uniform float direction;\n"
+		"layout(location=0)in vec3 aPos;\n"
+		"layout(location=1)in vec3 aNormal;\n"
+		"layout(location=2)in vec2 aTexCoords;\n"
+		"layout(location=3)in float aTextureID;\n"
+		"out vec3 FragPos;\n"
+		"out vec3 Normal;\n"
+		"out vec2 TexCoords;\n"
+		"out float TextureID;\n"
+		"uniform mat4 model;\n"
+		"uniform mat4 view;\n"
+		"uniform mat4 projection;\n"
 		"void main()\n"
 		"{\n"
-		" vec3 p = aPos.xyz - realPos;\n"
-    " float new_x = p.x*cos(direction) - p.y*sin(direction);\n"
-    " float new_y = p.y*cos(direction) + p.x*sin(direction);\n"
-		"	gl_Position = vec4(vec3(new_x, new_y, p.z) * scale + offset, 1.0);\n"
-		"	TexCoord = vec2(aTexCoord.x, aTexCoord.y);\n"
+		" FragPos=vec3(model*vec4(aPos,1.));\n"
+		" Normal=mat3(transpose(inverse(model)))*aNormal;\n"
+		" TexCoords=aTexCoords;\n"
+		" TextureID=aTextureID;\n"
+		" gl_Position=projection*view*vec4(FragPos,1.);\n"
 		"}";
 const char *lightCasterFShader =
 		"#version 330 core\n"
@@ -114,32 +154,11 @@ const char *lightCasterFShader =
 		" vec3 result=ambient+diffuse;\n"
 		" FragColor=vec4(result,1.);\n"
 		"}";
-const char *lightCasterVShader =
-		"#version 330 core\n"
-		"layout(location=0)in vec3 aPos;\n"
-		"layout(location=1)in vec3 aNormal;\n"
-		"layout(location=2)in vec2 aTexCoords;\n"
-		"layout(location=3)in float aTextureID;\n"
-		"out vec3 FragPos;\n"
-		"out vec3 Normal;\n"
-		"out vec2 TexCoords;\n"
-		"out float TextureID;\n"
-		"uniform mat4 model;\n"
-		"uniform mat4 view;\n"
-		"uniform mat4 projection;\n"
-		"void main()\n"
-		"{\n"
-		" FragPos=vec3(model*vec4(aPos,1.));\n"
-		" Normal=mat3(transpose(inverse(model)))*aNormal;\n"
-		" TexCoords=aTexCoords;\n"
-		" TextureID=aTextureID;\n"
-		" gl_Position=projection*view*vec4(FragPos,1.);\n"
-		"}";
 
-unsigned int shaderProgram[2];
+unsigned int shaderProgram[3];
 unsigned int textures[1024];
 unsigned char *texturesData[1024];
-unsigned int texture;
+unsigned int texture, fboTexture, textureColorbuffer;
 int textureCount = 0;
 int shaderCount = 0;
 unsigned int uniformView;
@@ -1593,6 +1612,85 @@ void init(void)
 	// screen color
 	glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
 
+
+	float quadVertices[] = {
+		// positions   // texCoords
+		-1.0f,  1.0f,  0.0f, 1.0f,
+		-1.0f, -1.0f,  0.0f, 0.0f,
+		1.0f, -1.0f,  1.0f, 0.0f,
+
+		-1.0f,  1.0f,  0.0f, 1.0f,
+		1.0f, -1.0f,  1.0f, 0.0f,
+		1.0f,  1.0f,  1.0f, 1.0f
+	};
+
+	glGenFramebuffers(1, &fbo);
+	glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+
+	glGenTextures(1, &fboTexture);
+	glBindTexture(GL_TEXTURE_2D, fboTexture);
+		
+	glGenTextures(1, &textureColorbuffer);
+	glBindTexture(GL_TEXTURE_2D, textureColorbuffer);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, screenWidth, screenHeight, 0, GL_RGB, GL_UNSIGNED_BYTE, NULL);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR );
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	glBindTexture(GL_TEXTURE_2D, 0);
+
+	// attach it to currently bound framebuffer object
+	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, textureColorbuffer, 0);
+
+	glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, rbo);
+
+	if(glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+		puts("ERROR::FRAMEBUFFER:: Framebuffer is not complete!");
+
+
+	glGenVertexArrays(1, &quadVAO);
+	glGenBuffers(1, &quadVBO);
+	glBindVertexArray(quadVAO);
+	glBindBuffer(GL_ARRAY_BUFFER, quadVBO);
+	glBufferData(GL_ARRAY_BUFFER, sizeof(quadVertices), &quadVertices, GL_STATIC_DRAW);
+	glEnableVertexAttribArray(0);
+	glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)0);
+	glEnableVertexAttribArray(1);
+	glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)(2 * sizeof(float)));
+
+	glGenRenderbuffers(1, &rbo);
+  glBindRenderbuffer(GL_RENDERBUFFER, rbo);
+  glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, screenWidth, screenHeight);
+  glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, rbo);
+
+
+	vertexShader = glCreateShader(GL_VERTEX_SHADER);
+
+	glShaderSource(vertexShader, 1, &vertexShaderSrc, NULL);
+	glCompileShader(vertexShader);
+	glGetShaderiv(vertexShader, GL_COMPILE_STATUS, &success);
+	if (!success)
+	{
+		glGetShaderInfoLog(vertexShader, 512, NULL, infoLog);
+		printf("ERROR::SHADER::VERTEX::COMPILATION_FAILED\n%s\n", infoLog);
+	}
+
+	fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
+
+	glShaderSource(fragmentShader, 1, &fragmentShaderSrc, NULL);
+	glCompileShader(fragmentShader);
+	
+	glGetShaderiv(fragmentShader, GL_COMPILE_STATUS, &success);
+	if (!success)
+	{
+		glGetShaderInfoLog(fragmentShader, 512, NULL, infoLog);
+		printf("ERROR::SHADER::FRAGMENT::COMPILATION_FAILED\n%s\n", infoLog);
+	}
+
+	loadShader(vertexShader, fragmentShader);
+
+
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+	
 	printf("%i\n", glGetError());
 }
 
@@ -1605,6 +1703,10 @@ void render()
 	vec3 center;
 	glm_vec3_add(cameraPos, cameraFront, center);
 	glm_lookat(cameraPos, center, cameraUp, view);
+
+	glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); // we're not using the stencil buffer now
+	glEnable(GL_DEPTH_TEST);
 
 	glUseProgram(shaderProgram[0]);
 
@@ -1636,6 +1738,24 @@ void render()
 	glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
 	glBindVertexArray(0);
 
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+	glDisable(GL_DEPTH_TEST);
+	glClear(GL_COLOR_BUFFER_BIT);
+
+	if (walked)
+	{
+		atualizeMovement();
+		float posX = mapScale * cameraChunkPos[1] / 140;
+		float posY = mapScale * cameraChunkPos[0] / 140;
+		glUniform3f(uniformRealPos, posX, posY, 0);
+		walked = false;
+	}
+
+	glUseProgram(shaderProgram[2]);
+	glBindVertexArray(quadVAO);
+	glBindTexture(GL_TEXTURE_2D, textureColorbuffer);
+	glDrawArrays(GL_TRIANGLES, 0, 6);
+
 	// fps counter
 	++nbFrames;
 	deltaTime = currentTime - lastFrame;
@@ -1645,15 +1765,6 @@ void render()
 		fps = nbFrames;
 		nbFrames = 0;
 		lastTime += 1.0;
-	}
-
-	if (walked)
-	{
-		atualizeMovement();
-		float posX = mapScale * cameraChunkPos[1] / 140;
-		float posY = mapScale * cameraChunkPos[0] / 140;
-		glUniform3f(uniformRealPos, posX, posY, 0);
-		walked = false;
 	}
 }
 
