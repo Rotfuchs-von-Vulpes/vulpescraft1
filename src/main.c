@@ -37,7 +37,7 @@
 	extern __attribute__((aligned(16))) const char incbin_ ## name ## _start[]; \
 	extern                              const char incbin_ ## name ## _end[]
 
-unsigned int mapVBO, mapVAO, quadVBO, quadVAO, mapEBO, fbo, rbo;
+unsigned int mapVBO, mapVAO, quadVBO, quadVAO, mapEBO, fbo, rbo, depthBuffer;
 
 const char *vertexShaderSrc = 
 		"#version 330 core\n"
@@ -54,13 +54,22 @@ const char *fragmentShaderSrc =
 		"out vec4 FragColor;\n"
 		"in vec2 TexCoords;\n"
 		"uniform sampler2D screenTexture;\n"
+		"uniform sampler2D depth;\n"
+		"vec4 fog_colour = vec4(.2, .3, .3, 1.);\n"
+		"float fog_maxdist = 144.;\n"
+		"float fog_mindist = 60.;\n"
 		"void main()\n"
 		"{\n"
 		" vec2 uv = TexCoords;\n"
     " uv *=  1.0 - uv.yx;\n"
     " float vig = uv.x*uv.y * 15.0;\n"
     " vig = pow(vig, .125);\n"
-		" FragColor = texture(screenTexture, TexCoords) * vig;\n"
+		" float dist = texture(depth, TexCoords).x;\n"
+    " dist = 2.0 * dist - 1.0;\n"
+    " dist = 2.0 * .1 * 1000. / (1000. + .1 - dist * (1000. - .1));\n"
+		" float fog_factor = (dist - fog_mindist) / (fog_maxdist - fog_mindist);\n"
+		" fog_factor = clamp(fog_factor, 0.0, 1.0);\n"
+		" FragColor = mix(texture(screenTexture, TexCoords), fog_colour, fog_factor) * vig;\n"
 		"}";
 const char *mapVShader =
 		"#version 330 core\n"
@@ -141,6 +150,7 @@ const char *lightCasterFShader =
 		"in vec3 Normal;\n"
 		"in vec2 TexCoords;\n"
 		"in float TextureID;\n"
+		"in vec4 gl_FragCoord;\n"
 		"uniform vec3 viewPos;\n"
 		"uniform Material material;\n"
 		"uniform sampler2DArray textures;\n"
@@ -157,7 +167,7 @@ const char *lightCasterFShader =
 		" vec3 reflectDir=reflect(-lightDir,norm);\n"
 		" float spec=pow(max(dot(viewDir,reflectDir),0.),material.shininess);\n"
 		" vec3 result=ambient+diffuse;\n"
-		" FragColor=vec4(result,1.);\n"
+		" FragColor = vec4(result, 1.);\n"
 		"}";
 
 unsigned int shaderProgram[3];
@@ -328,6 +338,7 @@ float fov = 70.0f;
 
 void resizeCallback(GLFWwindow *window, int width, int height)
 {
+	if (width == 0 || height == 0) return;
 	screenWidth = width;
 	screenHeight = height;
 	glViewport(0, 0, width, height);
@@ -344,10 +355,12 @@ void resizeCallback(GLFWwindow *window, int width, int height)
 	glUseProgram(shaderProgram[2]);
 	glBindTexture(GL_TEXTURE_2D, textureColorbuffer);
 	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, NULL);
+	glBindTexture(GL_TEXTURE_2D, depthBuffer);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT32, width, height, 0, GL_DEPTH_COMPONENT, GL_UNSIGNED_INT, 0);
 
-  glBindRenderbuffer(GL_RENDERBUFFER, rbo);
-  glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, screenWidth, screenHeight);
-  glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, rbo);
+  // glBindRenderbuffer(GL_RENDERBUFFER, rbo);
+  // glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, width, height);
+  // glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, rbo);
 }
 
 void mouseCallback(GLFWwindow *window, double xposIn, double yposIn)
@@ -1528,15 +1541,27 @@ void init(void)
 	glShaderSource(vertexShader, 1, &lightCasterVShader, NULL);
 	glCompileShader(vertexShader);
 
+	int success;
+	char infoLog[512];
+
+	glGetShaderiv(vertexShader, GL_COMPILE_STATUS, &success);
+	if (!success)
+	{
+		glGetShaderInfoLog(vertexShader, 512, NULL, infoLog);
+		printf("ERROR::SHADER::VERTEX::COMPILATION_FAILED\n%s\n", infoLog);
+	}
+
 	unsigned int fragmentShader;
 	fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
 
 	glShaderSource(fragmentShader, 1, &lightCasterFShader, NULL);
 	glCompileShader(fragmentShader);
-	char infoLog[512];
-	glGetShaderInfoLog(fragmentShader, 512, NULL, infoLog);
-	// printf("%i\n", glad_glGetError());
-	// printf("%s\n", infoLog);
+	glGetShaderiv(fragmentShader, GL_COMPILE_STATUS, &success);
+	if (!success)
+	{
+		glGetShaderInfoLog(fragmentShader, 512, NULL, infoLog);
+		printf("ERROR::SHADER::FRAGMENT::COMPILATION_FAILED\n%s\n", infoLog);
+	}
 
 	loadShader(vertexShader, fragmentShader);
 
@@ -1574,7 +1599,7 @@ void init(void)
 	uniformLoc = glGetUniformLocation(shaderProgram[0], "light.ambient");
 	glUniform3f(uniformLoc, 0.3f, 0.3f, 0.3f);
 	uniformLoc = glGetUniformLocation(shaderProgram[0], "light.diffuse");
-	glUniform3f(uniformLoc, 0.5f, 0.5f, 0.5f);
+	glUniform3f(uniformLoc, 0.625f, 0.625f, 0.625f);
 	uniformLoc = glGetUniformLocation(shaderProgram[0], "light.specular");
 	glUniform3f(uniformLoc, 1.0f, 1.0f, 1.0f);
 
@@ -1604,7 +1629,6 @@ void init(void)
 
 	glShaderSource(vertexShader, 1, &mapVShader, NULL);
 	glCompileShader(vertexShader);
-	int success;
 	glGetShaderiv(vertexShader, GL_COMPILE_STATUS, &success);
 	if (!success)
 	{
@@ -1680,22 +1704,30 @@ void init(void)
 
 	glGenFramebuffers(1, &fbo);
 	glBindFramebuffer(GL_FRAMEBUFFER, fbo);
-		
 	glGenTextures(1, &textureColorbuffer);
 	glBindTexture(GL_TEXTURE_2D, textureColorbuffer);
 	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, screenWidth, screenHeight, 0, GL_RGB, GL_UNSIGNED_BYTE, NULL);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR );
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 	glBindTexture(GL_TEXTURE_2D, 0);
-
-	// attach it to currently bound framebuffer object
 	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, textureColorbuffer, 0);
+	
+	glActiveTexture(GL_TEXTURE0);
+	glGenTextures(1, &depthBuffer);
+	glBindTexture(GL_TEXTURE_2D, depthBuffer);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT32, screenWidth, screenHeight, 0, GL_DEPTH_COMPONENT, GL_UNSIGNED_INT, 0);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+	float f4[4] = {1.f, 1.f, 1.f, 1.f};
+	glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, f4);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glBindTexture(GL_TEXTURE_2D, 0);
 
-	glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, rbo);
+	glFramebufferTexture(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, depthBuffer, 0);
 
 	if(glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
 		puts("ERROR::FRAMEBUFFER:: Framebuffer is not complete!");
-
 
 	glGenVertexArrays(1, &quadVAO);
 	glGenBuffers(1, &quadVBO);
@@ -1706,11 +1738,6 @@ void init(void)
 	glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)0);
 	glEnableVertexAttribArray(1);
 	glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)(2 * sizeof(float)));
-
-	glGenRenderbuffers(1, &rbo);
-  glBindRenderbuffer(GL_RENDERBUFFER, rbo);
-  glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, screenWidth, screenHeight);
-  glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, rbo);
 
 
 	vertexShader = glCreateShader(GL_VERTEX_SHADER);
@@ -1740,6 +1767,12 @@ void init(void)
 
 
 	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+
+	uniformLoc = glGetUniformLocation(shaderProgram[2], "screenTexture");
+	glUniform1i(uniformLoc, 0);
+	uniformLoc = glGetUniformLocation(shaderProgram[2], "depth");
+	glUniform1i(uniformLoc, 1);
 
 	
 	printf("%i\n", glGetError());
@@ -1797,7 +1830,10 @@ void render(void)
 
 		glUseProgram(shaderProgram[2]);
 		glBindVertexArray(quadVAO);
+		glActiveTexture(GL_TEXTURE0);
 		glBindTexture(GL_TEXTURE_2D, textureColorbuffer);
+		glActiveTexture(GL_TEXTURE1);
+		glBindTexture(GL_TEXTURE_2D, depthBuffer);
 		glDrawArrays(GL_TRIANGLES, 0, 6);
 
 		glUseProgram(shaderProgram[1]);
