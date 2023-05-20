@@ -55,18 +55,22 @@ const char *fragmentShaderSrc =
 		"in vec2 TexCoords;\n"
 		"uniform sampler2D screenTexture;\n"
 		"uniform sampler2D depth;\n"
-		"vec4 fog_colour = vec4(.2, .3, .3, 1.);\n"
+		"uniform float fov;"
+		"vec4 fog_colour = vec4(.6666, .8156, .9921, 1.);\n"
 		"float fog_maxdist = 144.;\n"
 		"float fog_mindist = 60.;\n"
 		"void main()\n"
 		"{\n"
 		" vec2 uv = TexCoords;\n"
-    " uv *=  1.0 - uv.yx;\n"
+    " uv *=  1. - uv.yx;\n"
     " float vig = uv.x*uv.y * 15.0;\n"
     " vig = pow(vig, .125);\n"
 		" float dist = texture(depth, TexCoords).x;\n"
-    " dist = 2.0 * dist - 1.0;\n"
-    " dist = 2.0 * .1 * 1000. / (1000. + .1 - dist * (1000. - .1));\n"
+    " dist = 2. * dist - 1.;\n"
+    " dist = 2. * .1 * 1000. / (1000. + .1 - dist * (1000. - .1));\n"
+		" float angleX = fov * (2. * TexCoords.x - 1.) / 2.;\n"
+		" float angleY = fov * (2. * TexCoords.y - 1.) / 2.;\n"
+		" dist = dist / cos(sqrt(angleX * angleX + angleY * angleY));\n"
 		" float fog_factor = (dist - fog_mindist) / (fog_maxdist - fog_mindist);\n"
 		" fog_factor = clamp(fog_factor, 0.0, 1.0);\n"
 		" FragColor = mix(texture(screenTexture, TexCoords), fog_colour, fog_factor) * vig;\n"
@@ -1599,14 +1603,15 @@ void init(void)
 	uniformLoc = glGetUniformLocation(shaderProgram[0], "light.ambient");
 	glUniform3f(uniformLoc, 0.3f, 0.3f, 0.3f);
 	uniformLoc = glGetUniformLocation(shaderProgram[0], "light.diffuse");
-	glUniform3f(uniformLoc, 0.625f, 0.625f, 0.625f);
+	glUniform3f(uniformLoc, 1.0f, 1.0f, 1.0f);
 	uniformLoc = glGetUniformLocation(shaderProgram[0], "light.specular");
 	glUniform3f(uniformLoc, 1.0f, 1.0f, 1.0f);
 
 	uniformLoc = glGetUniformLocation(shaderProgram[0], "material.shininess");
 	glUniform1f(uniformLoc, 32.0f);
 
-	glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
+	glClearColor(0.6666f, 0.8156f, 0.9921f, 1.0f);
+	// vec4(.6666, .8156, .9921, 1.)
 
 	glm_translate(view, (vec3){0.0f, 0.0f, -3.0f});
 	glm_perspective(glm_rad(fov), (float)screenWidth / (float)screenHeight, 0.1f, 1000.0f, projection);
@@ -1773,6 +1778,8 @@ void init(void)
 	glUniform1i(uniformLoc, 0);
 	uniformLoc = glGetUniformLocation(shaderProgram[2], "depth");
 	glUniform1i(uniformLoc, 1);
+	uniformLoc = glGetUniformLocation(shaderProgram[2], "fov");
+	glUniform1f(uniformLoc, glm_rad(fov));
 
 	
 	printf("%i\n", glGetError());
