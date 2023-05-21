@@ -247,6 +247,13 @@ bool firstKeyE = true;
 bool walked = false;
 
 
+bool firstMouse = true;
+float yaw = -90.0f;
+float pitch = 0.0f;
+float lastX = (float)SCREEN_HEIGHT_INIT / 2.0;
+float lastY = (float)SCREEN_HEIGHT_INIT / 2.0;
+
+float fov = 70.0f;
 float mapScale = 500. / SCREEN_WIDTH_INIT;
 bool mapview = false;
 bool firstKeyJ = true;
@@ -266,6 +273,9 @@ void processInput(GLFWwindow *window)
 		if (!firstKeyE)
 		{
 			firstKeyE = true;
+			glfwSetCursorPos(window, screenWidth / 2, screenHeight / 2);
+			lastX = (float)screenWidth / 2;
+			lastY = (float)screenHeight / 2;
 
 			if (cursorDisabled)
 			{
@@ -293,6 +303,9 @@ void processInput(GLFWwindow *window)
 		if (!firstKeyJ)
 		{
 			firstKeyJ = true;
+			glfwSetCursorPos(window, screenWidth / 2, screenHeight / 2);
+			lastX = (float)screenWidth / 2;
+			lastY = (float)screenHeight / 2;
 
 			if (mapview)
 			{
@@ -344,13 +357,6 @@ void processInput(GLFWwindow *window)
 		walked = true;
 	}
 }
-
-bool firstMouse = true;
-float yaw = -90.0f;
-float pitch = 0.0f;
-float lastX = (float)SCREEN_HEIGHT_INIT / 2.0;
-float lastY = (float)SCREEN_HEIGHT_INIT / 2.0;
-float fov = 70.0f;
 
 void resizeCallback(GLFWwindow *window, int width, int height)
 {
