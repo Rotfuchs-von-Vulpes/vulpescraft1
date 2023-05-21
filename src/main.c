@@ -56,9 +56,11 @@ const char *fragmentShaderSrc =
 		"uniform sampler2D screenTexture;\n"
 		"uniform sampler2D depth;\n"
 		"uniform float fov;"
+		"uniform float pitch;"
 		"vec4 fog_colour = vec4(.6666, .8156, .9921, 1.);\n"
+		"vec4 sky_colour = vec4(.4824, .5725, .9804, 1.);\n"
 		"float fog_maxdist = 144.;\n"
-		"float fog_mindist = 60.;\n"
+		"float fog_mindist = 112.;\n"
 		"void main()\n"
 		"{\n"
 		" vec2 uv = TexCoords;\n"
@@ -66,14 +68,23 @@ const char *fragmentShaderSrc =
     " float vig = uv.x*uv.y * 15.0;\n"
     " vig = pow(vig, .125);\n"
 		" float dist = texture(depth, TexCoords).x;\n"
-    " dist = 2. * dist - 1.;\n"
-    " dist = 2. * .1 * 1000. / (1000. + .1 - dist * (1000. - .1));\n"
-		" float angleX = fov * (2. * TexCoords.x - 1.) / 2.;\n"
 		" float angleY = fov * (2. * TexCoords.y - 1.) / 2.;\n"
-		" dist = dist / cos(sqrt(angleX * angleX + angleY * angleY));\n"
-		" float fog_factor = (dist - fog_mindist) / (fog_maxdist - fog_mindist);\n"
-		" fog_factor = clamp(fog_factor, 0.0, 1.0);\n"
-		" FragColor = mix(texture(screenTexture, TexCoords), fog_colour, fog_factor) * vig;\n"
+		" if (dist == 1.)\n"
+		" {\n"
+		"  float pct = smoothstep(-.05,.05,pitch + angleY - .1);\n"
+		"  FragColor = mix(fog_colour, sky_colour, pct);\n"
+		" }\n"
+		" else \n"
+		" {\n"
+    "  dist = 2. * dist - 1.;\n"
+    "  dist = 2. * .1 * 1000. / (1000. + .1 - dist * (1000. - .1));\n"
+		"  float angleX = fov * (2. * TexCoords.x - 1.) / 2.;\n"
+		"  dist = dist / cos(sqrt(angleX * angleX + angleY * angleY));\n"
+		"  float fog_factor = (dist - fog_mindist) / (fog_maxdist - fog_mindist);\n"
+		"  fog_factor = clamp(fog_factor, 0.0, 1.0);\n"
+		"  FragColor = mix(texture(screenTexture, TexCoords), fog_colour, fog_factor);\n"
+		" }\n"
+		" FragColor = FragColor * vig;\n"
 		"}";
 const char *mapVShader =
 		"#version 330 core\n"
@@ -187,6 +198,7 @@ unsigned int uniformRealPos;
 unsigned int uniformOffset;
 unsigned int uniformMapScale;
 unsigned int uniformCameraDirection;
+unsigned int uniformPitch;
 
 double lastTime;
 int nbFrames = 0;
@@ -1601,9 +1613,9 @@ void init(void)
 	uniformLoc = glGetUniformLocation(shaderProgram[0], "viewPos");
 	glUniform3f(uniformLoc, cameraPos[0], cameraPos[1], cameraPos[2]);
 	uniformLoc = glGetUniformLocation(shaderProgram[0], "light.ambient");
-	glUniform3f(uniformLoc, 0.3f, 0.3f, 0.3f);
+	glUniform3f(uniformLoc, 0.5f, 0.5f, 0.5f);
 	uniformLoc = glGetUniformLocation(shaderProgram[0], "light.diffuse");
-	glUniform3f(uniformLoc, 1.0f, 1.0f, 1.0f);
+	glUniform3f(uniformLoc, 0.8f, 0.8f, 0.8f);
 	uniformLoc = glGetUniformLocation(shaderProgram[0], "light.specular");
 	glUniform3f(uniformLoc, 1.0f, 1.0f, 1.0f);
 
@@ -1780,6 +1792,8 @@ void init(void)
 	glUniform1i(uniformLoc, 1);
 	uniformLoc = glGetUniformLocation(shaderProgram[2], "fov");
 	glUniform1f(uniformLoc, glm_rad(fov));
+	uniformPitch = glGetUniformLocation(shaderProgram[2], "pitch");
+	glUniform1f(uniformPitch, glm_rad(pitch));
 
 	
 	printf("%i\n", glGetError());
@@ -1842,6 +1856,7 @@ void render(void)
 		glActiveTexture(GL_TEXTURE1);
 		glBindTexture(GL_TEXTURE_2D, depthBuffer);
 		glDrawArrays(GL_TRIANGLES, 0, 6);
+		glUniform1f(uniformPitch, glm_rad(pitch));
 
 		glUseProgram(shaderProgram[1]);
 		glClear(GL_DEPTH_BUFFER_BIT);
