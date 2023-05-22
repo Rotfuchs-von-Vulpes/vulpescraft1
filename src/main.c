@@ -41,26 +41,49 @@ unsigned int mapVBO, mapVAO, quadVBO, quadVAO, mapEBO, fbo, rbo, depthBuffer;
 
 const char *vertexShaderSrc = 
 		"#version 330 core\n"
+		"uniform vec2 halfSizeNearPlane;\n"
 		"layout (location = 0) in vec2 aPos;\n"
 		"layout (location = 1) in vec2 aTexCoords;\n"
 		"out vec2 TexCoords;\n"
+		"out vec3 eyeDirection;\n"
 		"void main()\n"
 		"{\n"
 		" gl_Position = vec4(aPos.x, aPos.y, 0.0, 1.0); \n"
+		" eyeDirection = vec3((2.0 * halfSizeNearPlane * aTexCoords) - halfSizeNearPlane , -1.0);\n"
 		" TexCoords = aTexCoords;\n"
 		"}";
 const char *fragmentShaderSrc =
 		"#version 330 core\n"
 		"out vec4 FragColor;\n"
 		"in vec2 TexCoords;\n"
+		"in vec4 gl_FragCoord;\n"
+		"in vec3 eyeDirection;\n"
 		"uniform sampler2D screenTexture;\n"
 		"uniform sampler2D depth;\n"
-		"uniform float fov;"
-		"uniform float pitch;"
+		"uniform mat4 invPersMatrix;\n"
+		"uniform mat4 invViewMatrix;\n"
+		"uniform mat4 persMatrix;\n"
+		"uniform vec2 screen;\n"
+		"uniform float fov;\n"
+		"uniform float yaw;\n"
+		"uniform float pitch;\n"
 		"vec4 fog_colour = vec4(.6666, .8156, .9921, 1.);\n"
 		"vec4 sky_colour = vec4(.4824, .5725, .9804, 1.);\n"
 		"float fog_maxdist = 144.;\n"
 		"float fog_mindist = 112.;\n"
+		"vec4 CalcEyeFromWindow(in vec3 windowSpace)\n"
+		"{\n"
+		" vec3 ndcPos;\n"
+		" ndcPos.xy = (2.0 * windowSpace.xy) / (screen) - 1;\n"
+		" ndcPos.z = 2.0 * windowSpace.z - 1.;\n"
+		" \n"
+		" vec4 clipPos;\n"
+		" clipPos.w = persMatrix[3][2] / (ndcPos.z - (persMatrix[2][2] / persMatrix[2][3]));\n"
+		" clipPos.xyz = ndcPos * clipPos.w;\n"
+		" \n"
+		" return invPersMatrix * clipPos;\n"
+		"}\n"
+		"\n"
 		"void main()\n"
 		"{\n"
 		" vec2 uv = TexCoords;\n"
@@ -68,17 +91,20 @@ const char *fragmentShaderSrc =
     " float vig = uv.x*uv.y * 15.0;\n"
     " vig = pow(vig, .125);\n"
 		" float dist = texture(depth, TexCoords).x;\n"
+		" \n"
 		" float angleY = fov * (2. * TexCoords.y - 1.) / 2.;\n"
+		" float angleX = fov * (2. * TexCoords.x - 1.) / 2.;\n"
 		" if (dist == 1.)\n"
 		" {\n"
-		"  float pct = smoothstep(-.05,.05,pitch + angleY - .1);\n"
+		"  vec4 eyeSpace = CalcEyeFromWindow(vec3(gl_FragCoord.x, gl_FragCoord.y, texture(depth, TexCoords).x));\n"
+		"  vec4 worldSpace = invViewMatrix * eyeSpace;\n"
+		"  float pct = smoothstep(-.5,.5,worldSpace.y / 100. - 3.);\n"
 		"  FragColor = mix(fog_colour, sky_colour, pct);\n"
 		" }\n"
 		" else \n"
 		" {\n"
     "  dist = 2. * dist - 1.;\n"
     "  dist = 2. * .1 * 1000. / (1000. + .1 - dist * (1000. - .1));\n"
-		"  float angleX = fov * (2. * TexCoords.x - 1.) / 2.;\n"
 		"  dist = dist / cos(sqrt(angleX * angleX + angleY * angleY));\n"
 		"  float fog_factor = (dist - fog_mindist) / (fog_maxdist - fog_mindist);\n"
 		"  fog_factor = clamp(fog_factor, 0.0, 1.0);\n"
@@ -199,6 +225,10 @@ unsigned int uniformOffset;
 unsigned int uniformMapScale;
 unsigned int uniformCameraDirection;
 unsigned int uniformPitch;
+unsigned int uniformYaw;
+unsigned int uniformScreen;
+unsigned int uniformInvView;
+unsigned int uniformPers;
 
 double lastTime;
 int nbFrames = 0;
@@ -210,6 +240,54 @@ char title[100];
 
 int screenWidth = SCREEN_WIDTH_INIT;
 int screenHeight = SCREEN_HEIGHT_INIT;
+
+#define e(a,b) m[ ((j+b)%4)*4 + ((i+a)%4) ]
+
+float invf(int i, int j, const float *m){
+	int o = 2+(j-i);
+
+	i += 4+o;
+	j += 4-o;
+
+	float inv =
+	+ e(+1,-1)*e(+0,+0)*e(-1,+1)
+	+ e(+1,+1)*e(+0,-1)*e(-1,+0)
+	+ e(-1,-1)*e(+1,+0)*e(+0,+1)
+	- e(-1,-1)*e(+0,+0)*e(+1,+1)
+	- e(-1,+1)*e(+0,-1)*e(+1,+0)
+	- e(+1,-1)*e(-1,+0)*e(+0,+1);
+
+	return (o%2)?inv : -inv;
+}
+
+CGLM_INLINE
+bool inverseMatrix4x4(const mat4 mIn, mat4 out)
+{
+	float inv[16];
+	float m[16];
+
+	int k = 0;
+	for(int i = 0; i < 4; i++)
+		for(int j = 0; j < 4; j++, k++)
+			m[k] = mIn[i][j];
+			
+	for(int i=0;i<4;i++)
+		for(int j=0;j<4;j++)
+			inv[j*4+i] = invf(i,j,m);
+
+	double D = 0;
+
+	for(int k=0;k<4;k++) D += m[k] * inv[k*4];
+
+	if (D == 0) return false;
+
+	D = 1.0 / D;
+
+	for (int i = 0; i < 16; i++)
+		out[i / 4][i % 4] = inv[i] * D;
+
+	return true;
+}
 
 void loadShader(unsigned int vertexShader, unsigned int fragmentShader)
 {
@@ -228,7 +306,9 @@ void loadShader(unsigned int vertexShader, unsigned int fragmentShader)
 }
 
 mat4 view = GLM_MAT4_IDENTITY_INIT;
+mat4 invView;
 mat4 projection;
+mat4 invProjection;
 
 vec3 cameraPos = {8.0f, 80.0f, 8.0f};
 vec3 cameraFront = {0.0f, 0.0f, -1.0f};
@@ -379,10 +459,7 @@ void resizeCallback(GLFWwindow *window, int width, int height)
 	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, NULL);
 	glBindTexture(GL_TEXTURE_2D, depthBuffer);
 	glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT32, width, height, 0, GL_DEPTH_COMPONENT, GL_UNSIGNED_INT, 0);
-
-  // glBindRenderbuffer(GL_RENDERBUFFER, rbo);
-  // glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, width, height);
-  // glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, rbo);
+	glUniform2f(uniformScreen, width, height);
 }
 
 void mouseCallback(GLFWwindow *window, double xposIn, double yposIn)
@@ -458,7 +535,7 @@ hashFunction(int8_t const *cstr, int len)
 #define EXP 20
 // Initialize all slots to an "empty" value (null)
 #define HT_INIT \
-	{             \
+	{		          \
 		{0}, 0      \
 	}
 
@@ -1792,14 +1869,28 @@ void init(void)
 	glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
 
+	inverseMatrix4x4(projection, invProjection);
+	inverseMatrix4x4(view, invView);
 	uniformLoc = glGetUniformLocation(shaderProgram[2], "screenTexture");
 	glUniform1i(uniformLoc, 0);
 	uniformLoc = glGetUniformLocation(shaderProgram[2], "depth");
 	glUniform1i(uniformLoc, 1);
 	uniformLoc = glGetUniformLocation(shaderProgram[2], "fov");
 	glUniform1f(uniformLoc, glm_rad(fov));
+	uniformLoc = glGetUniformLocation(shaderProgram[2], "invPersMatrix");
+	glUniformMatrix4fv(uniformLoc, 1, false, (float *)invProjection);
+	uniformLoc = glGetUniformLocation(shaderProgram[2], "halfSizeNearPlane");
+	glUniform2f(uniformLoc, tan(glm_rad(fov) / 2) * ((float)screenWidth / (float)screenHeight), tan(glm_rad(fov) / 2));
 	uniformPitch = glGetUniformLocation(shaderProgram[2], "pitch");
 	glUniform1f(uniformPitch, glm_rad(pitch));
+	uniformYaw = glGetUniformLocation(shaderProgram[2], "yaw");
+	glUniform1f(uniformYaw, glm_rad(yaw));
+	uniformScreen = glGetUniformLocation(shaderProgram[2], "screen");
+	glUniform2f(uniformScreen, screenWidth, screenHeight);
+	uniformInvView = glGetUniformLocation(shaderProgram[2], "invViewMatrix");
+	glUniformMatrix4fv(uniformInvView, 1, false, (float *)invView);
+	uniformPers = glGetUniformLocation(shaderProgram[2], "persMatrix");
+	glUniformMatrix4fv(uniformPers, 1, false, (float *)projection);
 
 	
 	printf("%i\n", glGetError());
@@ -1842,7 +1933,6 @@ void render(void)
 		glBindTexture(GL_TEXTURE_2D_ARRAY, texture);
 
 		mat4 model = GLM_MAT4_IDENTITY_INIT;
-		glUseProgram(shaderProgram[0]);
 		for (int i = 0; i <= chunksTVCount; i++)
 		{
 			glUniformMatrix4fv(uniformTransform, 1, false, (float *)model);
@@ -1863,6 +1953,10 @@ void render(void)
 		glBindTexture(GL_TEXTURE_2D, depthBuffer);
 		glDrawArrays(GL_TRIANGLES, 0, 6);
 		glUniform1f(uniformPitch, glm_rad(pitch));
+		glUniform1f(uniformYaw, glm_rad(yaw));
+		inverseMatrix4x4(view, invView);
+		glUniformMatrix4fv(uniformInvView, 1, false, (float *)invView);
+		glUniformMatrix4fv(uniformPers, 1, false, (float *)projection);
 
 		glUseProgram(shaderProgram[1]);
 		glClear(GL_DEPTH_BUFFER_BIT);
