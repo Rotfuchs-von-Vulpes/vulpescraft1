@@ -72,6 +72,8 @@ const char *fragmentShaderSrc =
 		"vec4 sky_colour = vec4(.4824, .5725, .9804, 1.);\n"
 		"float fog_maxdist = 150.;\n"
 		"float fog_mindist = 100.;\n"
+		"float fogStart = 90.;\n"
+		"float fogDensity = .05;\n"
 		"vec4 CalcEyeFromWindow(in vec3 windowSpace)\n"
 		"{\n"
 		" vec3 ndcPos;\n"
@@ -103,8 +105,8 @@ const char *fragmentShaderSrc =
 		" else \n"
 		" {\n"
 		"  float fragDist = length(viewPos - worldSpace.xyz);\n"
-		"  float fog_factor = (fragDist - fog_mindist) / (fog_maxdist - fog_mindist);\n"
-		"  fog_factor = clamp(fog_factor, 0.0, 1.0);\n"
+		"  float fog_factor = 1.0 - exp((fragDist-fogStart) * -fogDensity);\n"
+		"  fog_factor = clamp(0.0, 1.0, fog_factor);\n"
 		"  FragColor = mix(texture(screenTexture, TexCoords), fog_colour, fog_factor);\n"
 		" }\n"
 		" FragColor = FragColor * vig;\n"
@@ -332,7 +334,7 @@ float pitch = 0.0f;
 float lastX = (float)SCREEN_HEIGHT_INIT / 2.0;
 float lastY = (float)SCREEN_HEIGHT_INIT / 2.0;
 
-float fov = 90.0f;
+float fov = 70.0f;
 float mapScale = 500. / SCREEN_WIDTH_INIT;
 bool mapview = false;
 bool firstKeyJ = true;
