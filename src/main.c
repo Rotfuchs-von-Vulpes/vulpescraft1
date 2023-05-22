@@ -63,6 +63,7 @@ const char *fragmentShaderSrc =
 		"uniform mat4 invPersMatrix;\n"
 		"uniform mat4 invViewMatrix;\n"
 		"uniform mat4 persMatrix;\n"
+		"uniform vec3 viewPos;\n"
 		"uniform vec2 screen;\n"
 		"uniform float fov;\n"
 		"uniform float yaw;\n"
@@ -90,23 +91,19 @@ const char *fragmentShaderSrc =
     " uv *=  1. - uv.yx;\n"
     " float vig = uv.x*uv.y * 15.0;\n"
     " vig = pow(vig, .125);\n"
-		" float dist = texture(depth, TexCoords).x;\n"
 		" \n"
-		" float angleY = fov * (2. * TexCoords.y - 1.) / 2.;\n"
-		" float angleX = fov * (2. * TexCoords.x - 1.) / 2.;\n"
+		" float dist = texture(depth, TexCoords).x;\n"
+		" vec4 eyeSpace = CalcEyeFromWindow(vec3(gl_FragCoord.x, gl_FragCoord.y, dist));\n"
+		" vec4 worldSpace = invViewMatrix * eyeSpace;\n"
 		" if (dist == 1.)\n"
 		" {\n"
-		"  vec4 eyeSpace = CalcEyeFromWindow(vec3(gl_FragCoord.x, gl_FragCoord.y, texture(depth, TexCoords).x));\n"
-		"  vec4 worldSpace = invViewMatrix * eyeSpace;\n"
 		"  float pct = smoothstep(-.5,.5,worldSpace.y / 100. - 3.);\n"
 		"  FragColor = mix(fog_colour, sky_colour, pct);\n"
 		" }\n"
 		" else \n"
 		" {\n"
-    "  dist = 2. * dist - 1.;\n"
-    "  dist = 2. * .1 * 1000. / (1000. + .1 - dist * (1000. - .1));\n"
-		"  dist = dist / cos(sqrt(angleX * angleX + angleY * angleY));\n"
-		"  float fog_factor = (dist - fog_mindist) / (fog_maxdist - fog_mindist);\n"
+		"  float fragDist = length(viewPos - worldSpace.xyz);\n"
+		"  float fog_factor = (fragDist - fog_mindist) / (fog_maxdist - fog_mindist);\n"
 		"  fog_factor = clamp(fog_factor, 0.0, 1.0);\n"
 		"  FragColor = mix(texture(screenTexture, TexCoords), fog_colour, fog_factor);\n"
 		" }\n"
@@ -229,6 +226,7 @@ unsigned int uniformYaw;
 unsigned int uniformScreen;
 unsigned int uniformInvView;
 unsigned int uniformPers;
+unsigned int uniformViewPos;
 
 double lastTime;
 int nbFrames = 0;
@@ -1891,6 +1889,8 @@ void init(void)
 	glUniformMatrix4fv(uniformInvView, 1, false, (float *)invView);
 	uniformPers = glGetUniformLocation(shaderProgram[2], "persMatrix");
 	glUniformMatrix4fv(uniformPers, 1, false, (float *)projection);
+	uniformViewPos = glGetUniformLocation(shaderProgram[2], "viewPos");
+	glUniform3f(uniformViewPos, cameraPos[0], cameraPos[1], cameraPos[2]);
 
 	
 	printf("%i\n", glGetError());
@@ -1957,6 +1957,7 @@ void render(void)
 		inverseMatrix4x4(view, invView);
 		glUniformMatrix4fv(uniformInvView, 1, false, (float *)invView);
 		glUniformMatrix4fv(uniformPers, 1, false, (float *)projection);
+		glUniform3f(uniformViewPos, cameraPos[0], cameraPos[1], cameraPos[2]);
 
 		glUseProgram(shaderProgram[1]);
 		glClear(GL_DEPTH_BUFFER_BIT);
