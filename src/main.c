@@ -70,8 +70,8 @@ const char *fragmentShaderSrc =
 		"uniform float pitch;\n"
 		"vec4 fog_colour = vec4(.6666, .8156, .9921, 1.);\n"
 		"vec4 sky_colour = vec4(.4824, .5725, .9804, 1.);\n"
-		"float fog_maxdist = 144.;\n"
-		"float fog_mindist = 112.;\n"
+		"float fog_maxdist = 150.;\n"
+		"float fog_mindist = 100.;\n"
 		"vec4 CalcEyeFromWindow(in vec3 windowSpace)\n"
 		"{\n"
 		" vec3 ndcPos;\n"
@@ -91,9 +91,9 @@ const char *fragmentShaderSrc =
     " uv *=  1. - uv.yx;\n"
     " float vig = uv.x*uv.y * 15.0;\n"
     " vig = pow(vig, .125);\n"
-		" \n"
 		" float dist = texture(depth, TexCoords).x;\n"
-		" vec4 eyeSpace = CalcEyeFromWindow(vec3(gl_FragCoord.x, gl_FragCoord.y, dist));\n"
+		" \n"
+		" vec4 eyeSpace = CalcEyeFromWindow(vec3(gl_FragCoord.x, gl_FragCoord.y, texture(depth, TexCoords).x));\n"
 		" vec4 worldSpace = invViewMatrix * eyeSpace;\n"
 		" if (dist == 1.)\n"
 		" {\n"
@@ -226,6 +226,7 @@ unsigned int uniformYaw;
 unsigned int uniformScreen;
 unsigned int uniformInvView;
 unsigned int uniformPers;
+unsigned int uniformInvPers;
 unsigned int uniformViewPos;
 
 double lastTime;
@@ -331,7 +332,7 @@ float pitch = 0.0f;
 float lastX = (float)SCREEN_HEIGHT_INIT / 2.0;
 float lastY = (float)SCREEN_HEIGHT_INIT / 2.0;
 
-float fov = 70.0f;
+float fov = 90.0f;
 float mapScale = 500. / SCREEN_WIDTH_INIT;
 bool mapview = false;
 bool firstKeyJ = true;
@@ -458,6 +459,9 @@ void resizeCallback(GLFWwindow *window, int width, int height)
 	glBindTexture(GL_TEXTURE_2D, depthBuffer);
 	glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT32, width, height, 0, GL_DEPTH_COMPONENT, GL_UNSIGNED_INT, 0);
 	glUniform2f(uniformScreen, width, height);
+	glUniformMatrix4fv(uniformPers, 1, false, (float *)projection);
+	inverseMatrix4x4(projection, invProjection);
+	glUniformMatrix4fv(uniformInvPers, 1, false, (float *)invProjection);
 }
 
 void mouseCallback(GLFWwindow *window, double xposIn, double yposIn)
@@ -1325,7 +1329,7 @@ void addVBO(chunkNode *c)
 	glEnableVertexAttribArray(3);
 }
 
-int viewDistance = 9;
+int viewDistance = 10;
 
 void generateManyChunks(ht *dimension, int posX, int posZ, chunkNode *chunkNodes, int *count, int *chunkLimit)
 {
@@ -1875,8 +1879,6 @@ void init(void)
 	glUniform1i(uniformLoc, 1);
 	uniformLoc = glGetUniformLocation(shaderProgram[2], "fov");
 	glUniform1f(uniformLoc, glm_rad(fov));
-	uniformLoc = glGetUniformLocation(shaderProgram[2], "invPersMatrix");
-	glUniformMatrix4fv(uniformLoc, 1, false, (float *)invProjection);
 	uniformLoc = glGetUniformLocation(shaderProgram[2], "halfSizeNearPlane");
 	glUniform2f(uniformLoc, tan(glm_rad(fov) / 2) * ((float)screenWidth / (float)screenHeight), tan(glm_rad(fov) / 2));
 	uniformPitch = glGetUniformLocation(shaderProgram[2], "pitch");
@@ -1889,6 +1891,8 @@ void init(void)
 	glUniformMatrix4fv(uniformInvView, 1, false, (float *)invView);
 	uniformPers = glGetUniformLocation(shaderProgram[2], "persMatrix");
 	glUniformMatrix4fv(uniformPers, 1, false, (float *)projection);
+	uniformInvPers = glGetUniformLocation(shaderProgram[2], "invPersMatrix");
+	glUniformMatrix4fv(uniformInvPers, 1, false, (float *)invProjection);
 	uniformViewPos = glGetUniformLocation(shaderProgram[2], "viewPos");
 	glUniform3f(uniformViewPos, cameraPos[0], cameraPos[1], cameraPos[2]);
 
