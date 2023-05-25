@@ -41,15 +41,12 @@ unsigned int mapVBO, mapVAO, quadVBO, quadVAO, mapEBO, fbo, rbo, depthBuffer;
 
 const char *vertexShaderSrc = 
 		"#version 330 core\n"
-		"uniform vec2 halfSizeNearPlane;\n"
 		"layout (location = 0) in vec2 aPos;\n"
 		"layout (location = 1) in vec2 aTexCoords;\n"
 		"out vec2 TexCoords;\n"
-		"out vec3 eyeDirection;\n"
 		"void main()\n"
 		"{\n"
 		" gl_Position = vec4(aPos.x, aPos.y, 0.0, 1.0); \n"
-		" eyeDirection = vec3((2.0 * halfSizeNearPlane * aTexCoords) - halfSizeNearPlane , -1.0);\n"
 		" TexCoords = aTexCoords;\n"
 		"}";
 const char *fragmentShaderSrc =
@@ -57,23 +54,22 @@ const char *fragmentShaderSrc =
 		"out vec4 FragColor;\n"
 		"in vec2 TexCoords;\n"
 		"in vec4 gl_FragCoord;\n"
-		"in vec3 eyeDirection;\n"
 		"uniform sampler2D screenTexture;\n"
 		"uniform sampler2D depth;\n"
 		"uniform mat4 invPersMatrix;\n"
 		"uniform mat4 invViewMatrix;\n"
 		"uniform mat4 persMatrix;\n"
+		"uniform mat4 viewMatrix;\n"
 		"uniform vec3 viewPos;\n"
+		"uniform vec3 sun;\n"
 		"uniform vec2 screen;\n"
 		"uniform float fov;\n"
-		"uniform float yaw;\n"
-		"uniform float pitch;\n"
 		"vec4 fog_colour = vec4(.6666, .8156, .9921, 1.);\n"
 		"vec4 sky_colour = vec4(.4824, .5725, .9804, 1.);\n"
 		"float fog_maxdist = 150.;\n"
 		"float fog_mindist = 100.;\n"
-		"float fogStart = 90.;\n"
-		"float fogDensity = .05;\n"
+		"float fogStart = 100.;\n"
+		"float fogDensity = .0375;\n"
 		"vec4 CalcEyeFromWindow(in vec3 windowSpace)\n"
 		"{\n"
 		" vec3 ndcPos;\n"
@@ -101,10 +97,13 @@ const char *fragmentShaderSrc =
 		" {\n"
 		"  float pct = smoothstep(-.5,.5,worldSpace.y / 100. - 3.);\n"
 		"  FragColor = mix(fog_colour, sky_colour, pct);\n"
+		"  vec3 look = vec3(viewMatrix[0][2], viewMatrix[1][2], viewMatrix[2][2]);\n"
+		"  if (length(look - sun) < 1.) FragColor = vec4(1.);\n"
 		" }\n"
 		" else \n"
 		" {\n"
-		"  float fragDist = length(viewPos - worldSpace.xyz);\n"
+		"  vec3 pos = viewPos;\n"
+		"  float fragDist = length(pos - worldSpace.xyz);\n"
 		"  float fog_factor = 1.0 - exp((fragDist-fogStart) * -fogDensity);\n"
 		"  fog_factor = clamp(0.0, 1.0, fog_factor);\n"
 		"  FragColor = mix(texture(screenTexture, TexCoords), fog_colour, fog_factor);\n"
@@ -226,6 +225,7 @@ unsigned int uniformCameraDirection;
 unsigned int uniformPitch;
 unsigned int uniformYaw;
 unsigned int uniformScreen;
+unsigned int uniformView2;
 unsigned int uniformInvView;
 unsigned int uniformPers;
 unsigned int uniformInvPers;
@@ -241,54 +241,6 @@ char title[100];
 
 int screenWidth = SCREEN_WIDTH_INIT;
 int screenHeight = SCREEN_HEIGHT_INIT;
-
-#define e(a,b) m[ ((j+b)%4)*4 + ((i+a)%4) ]
-
-float invf(int i, int j, const float *m){
-	int o = 2+(j-i);
-
-	i += 4+o;
-	j += 4-o;
-
-	float inv =
-	+ e(+1,-1)*e(+0,+0)*e(-1,+1)
-	+ e(+1,+1)*e(+0,-1)*e(-1,+0)
-	+ e(-1,-1)*e(+1,+0)*e(+0,+1)
-	- e(-1,-1)*e(+0,+0)*e(+1,+1)
-	- e(-1,+1)*e(+0,-1)*e(+1,+0)
-	- e(+1,-1)*e(-1,+0)*e(+0,+1);
-
-	return (o%2)?inv : -inv;
-}
-
-CGLM_INLINE
-bool inverseMatrix4x4(const mat4 mIn, mat4 out)
-{
-	float inv[16];
-	float m[16];
-
-	int k = 0;
-	for(int i = 0; i < 4; i++)
-		for(int j = 0; j < 4; j++, k++)
-			m[k] = mIn[i][j];
-			
-	for(int i=0;i<4;i++)
-		for(int j=0;j<4;j++)
-			inv[j*4+i] = invf(i,j,m);
-
-	double D = 0;
-
-	for(int k=0;k<4;k++) D += m[k] * inv[k*4];
-
-	if (D == 0) return false;
-
-	D = 1.0 / D;
-
-	for (int i = 0; i < 16; i++)
-		out[i / 4][i % 4] = inv[i] * D;
-
-	return true;
-}
 
 void loadShader(unsigned int vertexShader, unsigned int fragmentShader)
 {
@@ -354,7 +306,7 @@ void processInput(GLFWwindow *window)
 		if (!firstKeyE)
 		{
 			firstKeyE = true;
-			glfwSetCursorPos(window, screenWidth / 2, screenHeight / 2);
+			glfwSetCursorPos(window, (float)screenWidth / 2, (float)screenHeight / 2);
 			lastX = (float)screenWidth / 2;
 			lastY = (float)screenHeight / 2;
 
@@ -384,7 +336,7 @@ void processInput(GLFWwindow *window)
 		if (!firstKeyJ)
 		{
 			firstKeyJ = true;
-			glfwSetCursorPos(window, screenWidth / 2, screenHeight / 2);
+			glfwSetCursorPos(window, (float)screenWidth / 2, (float)screenHeight / 2);
 			lastX = (float)screenWidth / 2;
 			lastY = (float)screenHeight / 2;
 
@@ -461,8 +413,8 @@ void resizeCallback(GLFWwindow *window, int width, int height)
 	glBindTexture(GL_TEXTURE_2D, depthBuffer);
 	glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT32, width, height, 0, GL_DEPTH_COMPONENT, GL_UNSIGNED_INT, 0);
 	glUniform2f(uniformScreen, width, height);
+	glm_mat4_inv(projection, invProjection);
 	glUniformMatrix4fv(uniformPers, 1, false, (float *)projection);
-	inverseMatrix4x4(projection, invProjection);
 	glUniformMatrix4fv(uniformInvPers, 1, false, (float *)invProjection);
 }
 
@@ -671,9 +623,9 @@ int chunkCount = 0;
 int chunkLimit = 1024;
 chunkNode *chunks = NULL;
 int chunksTVCount = 0;
-int chunksToView[512];
+int chunksToView[1024];
 
-typedef enum {solid, transparent, empty, opaque} renderType;
+typedef enum renderType {solid, transparent, empty, opaque} renderType;
 
 typedef struct texturesId {
 	int top;
@@ -1268,18 +1220,17 @@ void generateChunkSides(ht *dimension, chunkNode *chunkNodes, int init, int coun
 	}
 }
 
-void generateChunkNode(ht *dimension, const int posX, const int posZ, chunkNode *chunkNodes, int *count, int *chunkLimit)
+void generateChunkNode(ht *dimension, const int posX, const int posZ, chunkNode **chunkNodes, int *count, int *chunkLimit)
 {
 	if (hasChunk(dimension, posX, posZ))
 		return;
 
-	chunkNode *chunkPtr = &chunkNodes[(*count)++];
-
-	if (*count + 1 >= *chunkLimit - 1)
+	if (*count + 2 >= *chunkLimit - 1)
 	{
 		*chunkLimit *= 2;
-		chunkNodes = (chunkNode *)realloc(chunkNodes, sizeof(chunkNode) * (*chunkLimit));
+		*chunkNodes = (chunkNode *)realloc(*chunkNodes, sizeof(chunkNode) * (*chunkLimit));
 	}
+	chunkNode *chunkPtr = &(*chunkNodes)[(*count)++];
 
 	chunkPtr->meshCount = 0;
 	chunkPtr->verticesBufferCount = 0;
@@ -1331,9 +1282,9 @@ void addVBO(chunkNode *c)
 	glEnableVertexAttribArray(3);
 }
 
-int viewDistance = 10;
+int viewDistance = 11;
 
-void generateManyChunks(ht *dimension, int posX, int posZ, chunkNode *chunkNodes, int *count, int *chunkLimit)
+void generateManyChunks(ht *dimension, int posX, int posZ, chunkNode **chunkNodes, int *count, int *chunkLimit)
 {
 	for (int i = posX - viewDistance; i <= posX + viewDistance; i++)
 	{
@@ -1358,32 +1309,17 @@ void atualizeMovement(void)
 		int dx = cameraChunk[0] - lastChunk[0];
 		int dy = cameraChunk[1] - lastChunk[1];
 
+		for (int i = cameraChunk[0] - viewDistance; i < cameraChunk[0] + viewDistance; i++)
+		{
+			for (int j = cameraChunk[1] - viewDistance; j <= cameraChunk[1] + viewDistance; j++)
+			{
+				generateChunkNode(&dimension, i, j, &chunks, &chunkCount, &chunkLimit);
+			}
+		}
+
 		if (dx != 0)
 		{
-			int signX;
-			int init;
-			int end;
-
-			if (dx > 0)
-			{
-				signX = 1;
-				init = 0;
-				end = dx;
-			}
-			else if (dx < 0)
-			{
-				signX = -1;
-				init = dx + 1;
-				end = 1;
-			}
-
-			for (int i = cameraChunk[0] + signX * viewDistance + init; i < cameraChunk[0] + signX * viewDistance + end; i++)
-			{
-				for (int j = cameraChunk[1] - viewDistance; j <= cameraChunk[1] + viewDistance; j++)
-				{
-					generateChunkNode(&dimension, i, j, chunks, &chunkCount, &chunkLimit);
-				}
-			}
+			int signX = dx > 0 ? 1 : -1;
 
 			int posX = cameraChunk[0] + signX * viewDistance - 2 * signX;
 			for (int i = cameraChunk[1] - viewDistance; i <= cameraChunk[1] + viewDistance; i++)
@@ -1402,32 +1338,9 @@ void atualizeMovement(void)
 
 		if (dy != 0)
 		{
-			int signY;
-			int init;
-			int end;
-
-			if (dy > 0)
-			{
-				signY = 1;
-				init = 0;
-				end = dy;
-			}
-			else if (dy < 0)
-			{
-				signY = -1;
-				init = dy + 1;
-				end = 1;
-			}
-
-			for (int i = cameraChunk[0] - viewDistance; i <= cameraChunk[0] + viewDistance; i++)
-			{
-				for (int j = cameraChunk[1] + signY * viewDistance + init; j < cameraChunk[1] + signY * viewDistance + end; j++)
-				{
-					generateChunkNode(&dimension, i, j, chunks, &chunkCount, &chunkLimit);
-				}
-			}
-
+			int signY = dy > 0 ? 1 : -1;
 			int posZ = cameraChunk[1] + signY * viewDistance - 2 * signY;
+
 			for (int i = cameraChunk[0] - viewDistance; i <= cameraChunk[0] + viewDistance; i++)
 			{
 				int index = getChunkIdx(&dimension, i, posZ);
@@ -1565,13 +1478,13 @@ INCBIN(glass, "V:/projetos/apisOrLibs/opengl/vulpescraft1/src/textures/default_g
 color calcColor(unsigned int textureId)
 {
 	unsigned char *texture = texturesData[textureId];
-	int total = 0;
+	long int total = 0;
 
-	int totalR = 0;
-	int totalG = 0;
-	int totalB = 0;
+	long int totalR = 0;
+	long int totalG = 0;
+	long int totalB = 0;
 
-	for (int i = 0; i <= 16 * 16 * 4; i += 4)
+	for (int i = 0; i < 16 * 16 * 4; i += 4)
 	{
 		if (texture[i + 3])
 		{
@@ -1583,9 +1496,9 @@ color calcColor(unsigned int textureId)
 	}
 
 	return (color){
-		.r = totalR / total,
-		.g = totalG / total,
-		.b = totalB / total
+		.r = (float)totalR / total,
+		.g = (float)totalG / total,
+		.b = (float)totalB / total
 	};
 }
 
@@ -1620,7 +1533,7 @@ void init(void)
 
 	calcColor(3);
 
-	generateManyChunks(&dimension, 0, 0, chunks, &chunkCount, &chunkLimit);
+	generateManyChunks(&dimension, 0, 0, &chunks, &chunkCount, &chunkLimit);
 	generateChunkSides(&dimension, chunks, 0, chunkCount);
 	generateMesh(chunks, 0, chunkCount);
 	generateVertices(chunks, 0, chunkCount);
@@ -1873,20 +1786,16 @@ void init(void)
 	glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
 
-	inverseMatrix4x4(projection, invProjection);
-	inverseMatrix4x4(view, invView);
+	glm_mat4_inv(projection, invProjection);
+	glm_mat4_inv(view, invView);
 	uniformLoc = glGetUniformLocation(shaderProgram[2], "screenTexture");
 	glUniform1i(uniformLoc, 0);
 	uniformLoc = glGetUniformLocation(shaderProgram[2], "depth");
 	glUniform1i(uniformLoc, 1);
+	uniformLoc = glGetUniformLocation(shaderProgram[2], "sun");
+	glUniform3f(uniformLoc, -0.2f, -1.0f, -0.3f);
 	uniformLoc = glGetUniformLocation(shaderProgram[2], "fov");
 	glUniform1f(uniformLoc, glm_rad(fov));
-	uniformLoc = glGetUniformLocation(shaderProgram[2], "halfSizeNearPlane");
-	glUniform2f(uniformLoc, tan(glm_rad(fov) / 2) * ((float)screenWidth / (float)screenHeight), tan(glm_rad(fov) / 2));
-	uniformPitch = glGetUniformLocation(shaderProgram[2], "pitch");
-	glUniform1f(uniformPitch, glm_rad(pitch));
-	uniformYaw = glGetUniformLocation(shaderProgram[2], "yaw");
-	glUniform1f(uniformYaw, glm_rad(yaw));
 	uniformScreen = glGetUniformLocation(shaderProgram[2], "screen");
 	glUniform2f(uniformScreen, screenWidth, screenHeight);
 	uniformInvView = glGetUniformLocation(shaderProgram[2], "invViewMatrix");
@@ -1897,6 +1806,8 @@ void init(void)
 	glUniformMatrix4fv(uniformInvPers, 1, false, (float *)invProjection);
 	uniformViewPos = glGetUniformLocation(shaderProgram[2], "viewPos");
 	glUniform3f(uniformViewPos, cameraPos[0], cameraPos[1], cameraPos[2]);
+	uniformView2 = glGetUniformLocation(shaderProgram[2], "viewMatrix");
+	glUniformMatrix4fv(uniformView2, 1, false, (float *)view);
 
 	
 	printf("%i\n", glGetError());
@@ -1905,10 +1816,12 @@ void init(void)
 
 	nanoseconds = SEC_TO_NS((uint64_t)ts_end.tv_sec) + (uint64_t)ts_end.tv_nsec - SEC_TO_NS((uint64_t)ts_init.tv_sec) + (uint64_t)ts_init.tv_nsec;
 
-	printf("Tempo para gerar as chunks: %llu", nanoseconds);
+	printf("Tempo para gerar as chunks: %llu\n", nanoseconds);
 }
 
 double currentTime;
+
+int num = 0;
 
 void render(void)
 {
@@ -1960,7 +1873,8 @@ void render(void)
 		glDrawArrays(GL_TRIANGLES, 0, 6);
 		glUniform1f(uniformPitch, glm_rad(pitch));
 		glUniform1f(uniformYaw, glm_rad(yaw));
-		inverseMatrix4x4(view, invView);
+		glm_mat4_inv(view, invView);
+		glUniformMatrix4fv(uniformView2, 1, false, (float *)view);
 		glUniformMatrix4fv(uniformInvView, 1, false, (float *)invView);
 		glUniformMatrix4fv(uniformPers, 1, false, (float *)projection);
 		glUniform3f(uniformViewPos, cameraPos[0], cameraPos[1], cameraPos[2]);
