@@ -135,15 +135,16 @@ const char *mapFShader =
 		"out vec4 FragColor;\n"
 		"void main()\n"
 		"{\n"
-		" if (dot(TexCoord.xy - .5 - realPos.xy, TexCoord.xy - .5 - realPos.xy) > .18) \n"
+		" vec2 pos = realPos.xy;"
+		" if (length(TexCoord.xy - .5 - pos) > .4243) \n"
     " {\n"
     "  discard;\n"
     " }\n"
-		" if (dot(TexCoord.xy - .5 - realPos.xy, TexCoord.xy - .5 - realPos.xy) > .175) \n"
+		" if (length(TexCoord.xy - .5 - pos) > .4183) \n"
     " {\n"
     "  FragColor=vec4(1.);\n"
     " }\n"
-		" else if (dot(TexCoord.xy - .5 - realPos.xy, TexCoord.xy - .5 - realPos.xy) < .0001) \n"
+		" else if (length(TexCoord.xy - .5 - pos) < .01) \n"
     " {\n"
     "  FragColor=vec4(1., 0., 0., 1.);\n"
     " }\n"
@@ -1892,8 +1893,8 @@ void render(void)
 		if (walked)
 		{
 			atualizeMovement();
-			float posX = mapScale * cameraChunkPos[1] / 140;
-			float posY = mapScale * cameraChunkPos[0] / 140;
+			float posX = 2 * cameraChunkPos[1] / (mapScale * screenWidth);
+			float posY = 2 * cameraChunkPos[0] / (mapScale * screenWidth);
 			glUniform3f(uniformRealPos, posX, posY, 0);
 			walked = false;
 		}
