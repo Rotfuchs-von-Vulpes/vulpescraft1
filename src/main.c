@@ -108,7 +108,7 @@ const char *fragmentShaderSrc =
 		"  fog_factor = clamp(0.0, 1.0, fog_factor);\n"
 		"  FragColor = mix(texture(screenTexture, TexCoords), fog_colour, fog_factor);\n"
 		" }\n"
-		" FragColor = FragColor * vig;\n"
+		" FragColor = vec4(FragColor.xyz * vig, 1.);\n"
 		"}";
 const char *mapVShader =
 		"#version 330 core\n"
@@ -138,9 +138,9 @@ const char *mapFShader =
 		" vec2 pos = realPos.xy;"
 		" if (length(TexCoord.xy - .5 - pos) > .4243) \n"
     " {\n"
-    "  discard;\n"
+    "  FragColor=vec4(0., 0., 0., 0.);\n"
     " }\n"
-		" if (length(TexCoord.xy - .5 - pos) > .4183) \n"
+		" else if (length(TexCoord.xy - .5 - pos) > .4183) \n"
     " {\n"
     "  FragColor=vec4(1.);\n"
     " }\n"
@@ -418,61 +418,6 @@ void resizeCallback(GLFWwindow *window, int width, int height)
 	glUniformMatrix4fv(uniformPers, 1, false, (float *)projection);
 	glUniformMatrix4fv(uniformInvPers, 1, false, (float *)invProjection);
 }
-
-void mouseCallback(GLFWwindow *window, double xposIn, double yposIn)
-{
-	if (!cursorDisabled)
-		return;
-
-	float xpos = xposIn;
-	float ypos = yposIn;
-
-	if (firstMouse)
-	{
-		lastX = xpos;
-		lastY = ypos;
-		firstMouse = false;
-	}
-
-	float xoffset = xpos - lastX;
-	float yoffset = lastY - ypos; // reversed since y-coordinates go from bottom to top
-	lastX = xpos;
-	lastY = ypos;
-
-	float sensitivity = 0.1f; // change this value to your liking
-	xoffset *= sensitivity;
-	yoffset *= sensitivity;
-
-	yaw += xoffset;
-	pitch += yoffset;
-
-	// make sure that when pitch is out of bounds, screen doesn't get flipped
-	if (pitch > 89.0f)
-		pitch = 89.0f;
-	if (pitch < -89.0f)
-		pitch = -89.0f;
-
-	vec3 front;
-	front[0] = cos(glm_rad(yaw)) * cos(glm_rad(pitch));
-	front[1] = sin(glm_rad(pitch));
-	front[2] = sin(glm_rad(yaw)) * cos(glm_rad(pitch));
-	glm_normalize(front);
-	glm_vec3_copy(front, cameraFront);
-	
-	glUseProgram(shaderProgram[1]);
-	cameraDirection = atan2(cameraFront[2], cameraFront[0]);
-	glUniform1f(uniformCameraDirection, cameraDirection);
-}
-
-void scrollCallback(GLFWwindow *window, double xoffset, double yoffset)
-{
-	fov -= (float)yoffset;
-	if (fov < 1.0f)
-		fov = 1.0f;
-	if (fov > 45.0f)
-		fov = 45.0f;
-}
-
 static inline uint64_t
 hashFunction(int8_t const *cstr, int len)
 {
@@ -624,7 +569,9 @@ int chunkCount = 0;
 int chunkLimit = 1024;
 chunkNode *chunks = NULL;
 int chunksTVCount = 0;
+int chunksIFCount = 0;
 int chunksToView[1024];
+int chunksInFront[1024];
 
 typedef enum renderType {solid, transparent, empty, opaque} renderType;
 
@@ -651,6 +598,62 @@ typedef struct block {
 } block;
 
 block blocks[1024][1024];
+
+void mouseCallback(GLFWwindow *window, double xposIn, double yposIn)
+{
+	if (!cursorDisabled)
+		return;
+
+	float angle = atan2(cameraFront[2], cameraFront[0]);
+	float angleLeft = angle - fov / 2;
+	float angleRight = angle + fov / 2;
+
+	chunksIFCount = 0;
+
+	for (int i = 0; i < chunksTVCount; i++)
+	{
+		chunksInFront[chunksIFCount++] = chunksToView[i];
+	}
+
+	float xpos = xposIn;
+	float ypos = yposIn;
+
+	if (firstMouse)
+	{
+		lastX = xpos;
+		lastY = ypos;
+		firstMouse = false;
+	}
+
+	float xoffset = xpos - lastX;
+	float yoffset = lastY - ypos; // reversed since y-coordinates go from bottom to top
+	lastX = xpos;
+	lastY = ypos;
+
+	float sensitivity = 0.1f; // change this value to your liking
+	xoffset *= sensitivity;
+	yoffset *= sensitivity;
+
+	yaw += xoffset;
+	pitch += yoffset;
+
+	// make sure that when pitch is out of bounds, screen doesn't get flipped
+	if (pitch > 89.0f)
+		pitch = 89.0f;
+	if (pitch < -89.0f)
+		pitch = -89.0f;
+
+	vec3 front;
+	front[0] = cos(glm_rad(yaw)) * cos(glm_rad(pitch));
+	front[1] = sin(glm_rad(pitch));
+	front[2] = sin(glm_rad(yaw)) * cos(glm_rad(pitch));
+	glm_normalize(front);
+	glm_vec3_copy(front, cameraFront);
+	
+	glUseProgram(shaderProgram[1]);
+	cameraDirection = atan2(cameraFront[2], cameraFront[0]);
+	glUniform1f(uniformCameraDirection, cameraDirection);
+}
 
 bool hasAir(chunkNode *c, int x, int y, int z, int sideId[2])
 {
@@ -1544,6 +1547,8 @@ void init(void)
 	glEnable(GL_DEPTH_TEST);
 	glEnable(GL_CULL_FACE);
 	glCullFace(GL_BACK);
+	glEnable(GL_BLEND);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
 	for (int i = 0; i < chunkCount; i++)
 	{
@@ -1853,11 +1858,11 @@ void render(void)
 		glBindTexture(GL_TEXTURE_2D_ARRAY, texture);
 
 		mat4 model = GLM_MAT4_IDENTITY_INIT;
-		for (int i = 0; i <= chunksTVCount; i++)
+		for (int i = 0; i <= chunksIFCount; i++)
 		{
 			glUniformMatrix4fv(uniformTransform, 1, false, (float *)model);
-			glBindVertexArray(chunks[chunksToView[i]].VAO);
-			glDrawElements(GL_TRIANGLES, chunks[chunksToView[i]].indicesBufferCount, GL_UNSIGNED_INT, 0);
+			glBindVertexArray(chunks[chunksInFront[i]].VAO);
+			glDrawElements(GL_TRIANGLES, chunks[chunksInFront[i]].indicesBufferCount, GL_UNSIGNED_INT, 0);
 			glBindVertexArray(0);
 		}
 
@@ -1931,7 +1936,6 @@ int main(int argc, char **args)
 	gladLoadGLLoader((GLADloadproc)glfwGetProcAddress);
 	glfwSetWindowSizeCallback(window, resizeCallback);
 	glfwSetCursorPosCallback(window, mouseCallback);
-	glfwSetScrollCallback(window, scrollCallback);
 	glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 
 	init();
@@ -1953,5 +1957,6 @@ int main(int argc, char **args)
 	glfwDestroyWindow(window);
 	glfwTerminate();
 	// gui_terminate();
+	
 	return 0;
 }
