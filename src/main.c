@@ -259,165 +259,6 @@ void loadShader(unsigned int vertexShader, unsigned int fragmentShader)
 	++shaderCount;
 }
 
-mat4 view = GLM_MAT4_IDENTITY_INIT;
-mat4 invView;
-mat4 projection;
-mat4 invProjection;
-
-vec3 cameraPos = {8.0f, 80.0f, 8.0f};
-vec3 cameraFront = {0.0f, 0.0f, -1.0f};
-vec3 cameraUp = {0.0f, 1.0f, 0.0f};
-ivec2 lastChunk = {0, 0};
-ivec2 cameraChunk = {0, 0};
-vec2 cameraChunkPos = {0, 0};
-float cameraDirection;
-
-float deltaTime = 0.0f; // time between current frame and last frame
-float lastFrame = 0.0f;
-
-bool cursorDisabled = true;
-bool firstKeyE = true;
-
-bool walked = false;
-
-
-bool firstMouse = true;
-float yaw = -90.0f;
-float pitch = 0.0f;
-float lastX = (float)SCREEN_HEIGHT_INIT / 2.0;
-float lastY = (float)SCREEN_HEIGHT_INIT / 2.0;
-
-float fov = 70.0f;
-float mapScale = 500. / SCREEN_WIDTH_INIT;
-bool mapview = false;
-bool firstKeyJ = true;
-
-void processInput(GLFWwindow *window)
-{
-	if (glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS)
-	{
-		if (firstKeyE)
-		{
-			firstKeyE = false;
-		}
-	}
-
-	if (glfwGetKey(window, GLFW_KEY_E) == GLFW_RELEASE)
-	{
-		if (!firstKeyE)
-		{
-			firstKeyE = true;
-			glfwSetCursorPos(window, (float)screenWidth / 2, (float)screenHeight / 2);
-			lastX = (float)screenWidth / 2;
-			lastY = (float)screenHeight / 2;
-
-			if (cursorDisabled)
-			{
-				glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
-				cursorDisabled = false;
-			}
-			else
-			{
-				glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
-				cursorDisabled = true;
-			}
-		}
-	}
-
-	if (glfwGetKey(window, GLFW_KEY_J) == GLFW_PRESS)
-	{
-		if (firstKeyJ)
-		{
-			firstKeyJ = false;
-		}
-	}
-
-	if (glfwGetKey(window, GLFW_KEY_J) == GLFW_RELEASE)
-	{
-		if (!firstKeyJ)
-		{
-			firstKeyJ = true;
-			glfwSetCursorPos(window, (float)screenWidth / 2, (float)screenHeight / 2);
-			lastX = (float)screenWidth / 2;
-			lastY = (float)screenHeight / 2;
-
-			if (mapview)
-			{
-				glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
-				cursorDisabled = true;
-				mapview = false;
-			}
-			else
-			{
-				glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
-				cursorDisabled = false;
-				mapview = true;
-			}
-		}
-	}
-
-	if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
-		glfwSetWindowShouldClose(window, true);
-
-	float cameraSpeed = (5 * deltaTime);
-	vec3 scale;
-	vec3 cross;
-	if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
-	{
-		glm_vec3_scale(cameraFront, cameraSpeed, scale);
-		glm_vec3_add(cameraPos, scale, cameraPos);
-		walked = true;
-	}
-	if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
-	{
-		glm_vec3_scale(cameraFront, -cameraSpeed, scale);
-		glm_vec3_add(cameraPos, scale, cameraPos);
-		walked = true;
-	}
-	if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
-	{
-		glm_cross(cameraFront, cameraUp, cross);
-		glm_normalize(cross);
-		glm_vec3_scale(cross, -cameraSpeed, scale);
-		glm_vec3_add(cameraPos, scale, cameraPos);
-		walked = true;
-	}
-	if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
-	{
-		glm_cross(cameraFront, cameraUp, cross);
-		glm_normalize(cross);
-		glm_vec3_scale(cross, cameraSpeed, scale);
-		glm_vec3_add(cameraPos, scale, cameraPos);
-		walked = true;
-	}
-}
-
-void resizeCallback(GLFWwindow *window, int width, int height)
-{
-	if (width == 0 || height == 0) return;
-	screenWidth = width;
-	screenHeight = height;
-	glViewport(0, 0, width, height);
-	glm_perspective(glm_rad(fov), (float)width / (float)height, 0.1f, 1000.0f, projection);
-
-	glUseProgram(shaderProgram[0]);
-	glUniformMatrix4fv(uniformProjection, 1, false, (float *)projection);
-
-	glUseProgram(shaderProgram[1]);
-	mapScale = 500. / width;
-	glUniform3f(uniformMapScale, mapScale, (float)width / (float)height * mapScale, 0);
-	glUniform3f(uniformOffset, (width - 300.) / width, (height - 300.) / height, 0);
-
-	glUseProgram(shaderProgram[2]);
-	glBindTexture(GL_TEXTURE_2D, textureColorbuffer);
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, NULL);
-	glBindTexture(GL_TEXTURE_2D, depthBuffer);
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT32, width, height, 0, GL_DEPTH_COMPONENT, GL_UNSIGNED_INT, 0);
-	glUniform2f(uniformScreen, width, height);
-	glm_mat4_inv(projection, invProjection);
-	glUniformMatrix4fv(uniformPers, 1, false, (float *)projection);
-	glUniformMatrix4fv(uniformInvPers, 1, false, (float *)invProjection);
-}
 static inline uint64_t
 hashFunction(int8_t const *cstr, int len)
 {
@@ -599,21 +440,83 @@ typedef struct block {
 
 block blocks[1024][1024];
 
+bool testAab(mat4 MPV, vec3 min, vec3 max)
+{
+	float nxX = MPV[0][3] + MPV[0][0], nxY = MPV[1][3] + MPV[1][0], nxZ = MPV[2][3] + MPV[2][0], nxW = MPV[3][3] + MPV[3][0];
+	float pxX = MPV[0][3] - MPV[0][0], pxY = MPV[1][3] - MPV[1][0], pxZ = MPV[2][3] - MPV[2][0], pxW = MPV[3][3] - MPV[3][0];
+	float nyX = MPV[0][3] + MPV[0][1], nyY = MPV[1][3] + MPV[1][1], nyZ = MPV[2][3] + MPV[2][1], nyW = MPV[3][3] + MPV[3][1];
+	float pyX = MPV[0][3] - MPV[0][1], pyY = MPV[1][3] - MPV[1][1], pyZ = MPV[2][3] - MPV[2][1], pyW = MPV[3][3] - MPV[3][1];
+	float nzX = MPV[0][3] + MPV[0][2], nzY = MPV[1][3] + MPV[1][2], nzZ = MPV[2][3] + MPV[2][2], nzW = MPV[3][3] + MPV[3][2];
+	float pzX = MPV[0][3] - MPV[0][2], pzY = MPV[1][3] - MPV[1][2], pzZ = MPV[2][3] - MPV[2][2], pzW = MPV[3][3] - MPV[3][2];
+	
+	return nxX * (nxX < 0 ? min[0] : max[0]) + nxY * (nxY < 0 ? min[1] : max[1]) + nxZ * (nxZ < 0 ? min[2] : max[2]) >= -nxW &&
+		pxX * (pxX < 0 ? min[0] : max[0]) + pxY * (pxY < 0 ? min[1] : max[1]) + pxZ * (pxZ < 0 ? min[2] : max[2]) >= -pxW &&
+		nyX * (nyX < 0 ? min[0] : max[0]) + nyY * (nyY < 0 ? min[1] : max[1]) + nyZ * (nyZ < 0 ? min[2] : max[2]) >= -nyW &&
+		pyX * (pyX < 0 ? min[0] : max[0]) + pyY * (pyY < 0 ? min[1] : max[1]) + pyZ * (pyZ < 0 ? min[2] : max[2]) >= -pyW &&
+		nzX * (nzX < 0 ? min[0] : max[0]) + nzY * (nzY < 0 ? min[1] : max[1]) + nzZ * (nzZ < 0 ? min[2] : max[2]) >= -nzW &&
+		pzX * (pzX < 0 ? min[0] : max[0]) + pzY * (pzY < 0 ? min[1] : max[1]) + pzZ * (pzZ < 0 ? min[2] : max[2]) >= -pzW;
+}
+
+mat4 view = GLM_MAT4_IDENTITY_INIT;
+mat4 invView;
+mat4 projection;
+mat4 invProjection;
+float near = .1f;
+float far = 1000.f;
+
+vec3 cameraPos = {8.f, 80.f, 8.f};
+vec3 cameraFront = {0.f, 0.f, -1.f};
+vec3 cameraUp = {0.f, 1.f, 0.f};
+vec3 cameraRight = {1.f, 0.f, 0.f};
+ivec2 lastChunk = {0, 0};
+ivec2 cameraChunk = {0, 0};
+vec2 cameraChunkPos = {0, 0};
+float cameraDirection;
+float lastCameraDirection = 0;
+
+float deltaTime = 0.0f; // time between current frame and last frame
+float lastFrame = 0.0f;
+
+bool cursorDisabled = true;
+bool firstKeyE = true;
+
+bool walked = false;
+
+
+bool firstMouse = true;
+float yaw = -90.0f;
+float pitch = 0.0f;
+float lastX = (float)SCREEN_HEIGHT_INIT / 2.0;
+float lastY = (float)SCREEN_HEIGHT_INIT / 2.0;
+
+float fov = 70.0f;
+float mapScale = 500. / SCREEN_WIDTH_INIT;
+bool mapview = false;
+bool firstKeyJ = true;
+
+void calculateFrustum(void)
+{
+	chunksIFCount = 0;
+
+	mat4 MPV;
+	glm_mat4_mul(projection, view, MPV);
+
+	for (int i = 0; i < chunksTVCount; i++)
+	{
+		chunkNode* c = &chunks[chunksToView[i]];
+
+		vec3 min = {c->posX * 16, 0, c->posZ * 16};
+		vec3 max = {c->posX * 16 + 16, 256, c->posZ * 16 + 16};
+
+		if (testAab(MPV, min, max))
+			chunksInFront[chunksIFCount++] = chunksToView[i];
+	}
+}
+
 void mouseCallback(GLFWwindow *window, double xposIn, double yposIn)
 {
 	if (!cursorDisabled)
 		return;
-
-	float angle = atan2(cameraFront[2], cameraFront[0]);
-	float angleLeft = angle - fov / 2;
-	float angleRight = angle + fov / 2;
-
-	chunksIFCount = 0;
-
-	for (int i = 0; i < chunksTVCount; i++)
-	{
-		chunksInFront[chunksIFCount++] = chunksToView[i];
-	}
 
 	float xpos = xposIn;
 	float ypos = yposIn;
@@ -638,10 +541,10 @@ void mouseCallback(GLFWwindow *window, double xposIn, double yposIn)
 	pitch += yoffset;
 
 	// make sure that when pitch is out of bounds, screen doesn't get flipped
-	if (pitch > 89.0f)
-		pitch = 89.0f;
-	if (pitch < -89.0f)
-		pitch = -89.0f;
+	if (pitch > 89.9f)
+		pitch = 89.9f;
+	if (pitch < -89.9f)
+		pitch = -89.9f;
 
 	vec3 front;
 	front[0] = cos(glm_rad(yaw)) * cos(glm_rad(pitch));
@@ -649,10 +552,149 @@ void mouseCallback(GLFWwindow *window, double xposIn, double yposIn)
 	front[2] = sin(glm_rad(yaw)) * cos(glm_rad(pitch));
 	glm_normalize(front);
 	glm_vec3_copy(front, cameraFront);
+
+	glm_vec3_cross(cameraFront, (vec3){0.f, 1.f, 0.f}, cameraRight);
+	glm_vec3_normalize(cameraRight);
+
+	glm_vec3_cross(cameraRight, cameraFront, cameraUp);
+	glm_vec3_normalize(cameraUp);
+
+	if(fabsf(lastCameraDirection - cameraDirection) > .01)
+	{
+		lastCameraDirection = cameraDirection;
+		calculateFrustum();
+	}
 	
 	glUseProgram(shaderProgram[1]);
 	cameraDirection = atan2(cameraFront[2], cameraFront[0]);
 	glUniform1f(uniformCameraDirection, cameraDirection);
+}
+
+void processInput(GLFWwindow *window)
+{
+	if (glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS)
+	{
+		if (firstKeyE)
+		{
+			firstKeyE = false;
+		}
+	}
+
+	if (glfwGetKey(window, GLFW_KEY_E) == GLFW_RELEASE)
+	{
+		if (!firstKeyE)
+		{
+			firstKeyE = true;
+			glfwSetCursorPos(window, (float)screenWidth / 2, (float)screenHeight / 2);
+			lastX = (float)screenWidth / 2;
+			lastY = (float)screenHeight / 2;
+
+			if (cursorDisabled)
+			{
+				glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+				cursorDisabled = false;
+			}
+			else
+			{
+				glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+				cursorDisabled = true;
+			}
+		}
+	}
+
+	if (glfwGetKey(window, GLFW_KEY_J) == GLFW_PRESS)
+	{
+		if (firstKeyJ)
+		{
+			firstKeyJ = false;
+		}
+	}
+
+	if (glfwGetKey(window, GLFW_KEY_J) == GLFW_RELEASE)
+	{
+		if (!firstKeyJ)
+		{
+			firstKeyJ = true;
+			glfwSetCursorPos(window, (float)screenWidth / 2, (float)screenHeight / 2);
+			lastX = (float)screenWidth / 2;
+			lastY = (float)screenHeight / 2;
+
+			if (mapview)
+			{
+				glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+				cursorDisabled = true;
+				mapview = false;
+			}
+			else
+			{
+				glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+				cursorDisabled = false;
+				mapview = true;
+			}
+		}
+	}
+
+	if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
+		glfwSetWindowShouldClose(window, true);
+
+	float cameraSpeed = (5 * deltaTime);
+	vec3 scale;
+	vec3 cross;
+	if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
+	{
+		glm_vec3_scale(cameraFront, cameraSpeed, scale);
+		glm_vec3_add(cameraPos, scale, cameraPos);
+		walked = true;
+	}
+	if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
+	{
+		glm_vec3_scale(cameraFront, -cameraSpeed, scale);
+		glm_vec3_add(cameraPos, scale, cameraPos);
+		walked = true;
+	}
+	if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
+	{
+		glm_cross(cameraFront, cameraUp, cross);
+		glm_normalize(cross);
+		glm_vec3_scale(cross, -cameraSpeed, scale);
+		glm_vec3_add(cameraPos, scale, cameraPos);
+		walked = true;
+	}
+	if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
+	{
+		glm_cross(cameraFront, cameraUp, cross);
+		glm_normalize(cross);
+		glm_vec3_scale(cross, cameraSpeed, scale);
+		glm_vec3_add(cameraPos, scale, cameraPos);
+		walked = true;
+	}
+}
+
+void resizeCallback(GLFWwindow *window, int width, int height)
+{
+	if (width == 0 || height == 0) return;
+	screenWidth = width;
+	screenHeight = height;
+	glViewport(0, 0, width, height);
+	glm_perspective(glm_rad(fov), (float)width / (float)height, 0.1f, 1000.0f, projection);
+
+	glUseProgram(shaderProgram[0]);
+	glUniformMatrix4fv(uniformProjection, 1, false, (float *)projection);
+
+	glUseProgram(shaderProgram[1]);
+	mapScale = 500. / width;
+	glUniform3f(uniformMapScale, mapScale, (float)width / (float)height * mapScale, 0);
+	glUniform3f(uniformOffset, (width - 300.) / width, (height - 300.) / height, 0);
+
+	glUseProgram(shaderProgram[2]);
+	glBindTexture(GL_TEXTURE_2D, textureColorbuffer);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, NULL);
+	glBindTexture(GL_TEXTURE_2D, depthBuffer);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT32, width, height, 0, GL_DEPTH_COMPONENT, GL_UNSIGNED_INT, 0);
+	glUniform2f(uniformScreen, width, height);
+	glm_mat4_inv(projection, invProjection);
+	glUniformMatrix4fv(uniformPers, 1, false, (float *)projection);
+	glUniformMatrix4fv(uniformInvPers, 1, false, (float *)invProjection);
 }
 
 bool hasAir(chunkNode *c, int x, int y, int z, int sideId[2])
@@ -1519,7 +1561,7 @@ void init(void)
 	
 	stbi_set_flip_vertically_on_load(true);
 	int width, height, comp;
-	LOAD_TEXTURE(box)             // 0
+	LOAD_TEXTURE(box)	            // 0
 	LOAD_TEXTURE(iron_frame)      // 1
 	LOAD_TEXTURE(stone)           // 2
 	LOAD_TEXTURE(grass)           // 3
@@ -1534,8 +1576,6 @@ void init(void)
 	blocks[2][1] = (block){.name = "Dirt with grass", .type = solid, .textures = {3, 5, 4, 4, 4, 4}, .averageColor = calcColor(3)};
 	blocks[3][0] = (block){.name = "Oak leaves", .type = empty, .textures = {7, 7, 7, 7, 7, 7}, .averageColor = calcColor(7)};
 	blocks[4][0] = (block){.name = "Glass", .type = transparent, .textures = {8, 8, 8, 8, 8, 8}, .averageColor = calcColor(8)};
-
-	calcColor(3);
 
 	generateManyChunks(&dimension, 0, 0, &chunks, &chunkCount, &chunkLimit);
 	generateChunkSides(&dimension, chunks, 0, chunkCount);
@@ -1632,7 +1672,11 @@ void init(void)
 	// vec4(.6666, .8156, .9921, 1.)
 
 	glm_translate(view, (vec3){0.0f, 0.0f, -3.0f});
-	glm_perspective(glm_rad(fov), (float)screenWidth / (float)screenHeight, 0.1f, 1000.0f, projection);
+	glm_perspective(glm_rad(fov), (float)screenWidth / (float)screenHeight, near, far, projection);
+	vec3 center;
+	glm_vec3_add(cameraPos, cameraFront, center);
+	glm_lookat(cameraPos, center, cameraUp, view);
+	calculateFrustum();
 
 	glBindBuffer(GL_ARRAY_BUFFER, 0);
 
@@ -1898,6 +1942,7 @@ void render(void)
 		if (walked)
 		{
 			atualizeMovement();
+			calculateFrustum();
 			float posX = 2 * cameraChunkPos[1] / (mapScale * screenWidth);
 			float posY = 2 * cameraChunkPos[0] / (mapScale * screenWidth);
 			glUniform3f(uniformRealPos, posX, posY, 0);
