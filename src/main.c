@@ -1025,7 +1025,14 @@ void generateChunk(chunkNode *c, int posX, int posZ)
 			float noised = fbm((vec2){px, pz});
 
 			int height = floor(20 * noised + 50);
-			c->height[x * 16 + z] = height;
+			if (height > 59)
+			{
+				c->height[x * 16 + z] = height;
+			}
+			else
+			{
+				c->height[x * 16 + z] = 59;
+			}
 
 			for (int y = 0; y < 256; y++)
 			{
@@ -1036,13 +1043,18 @@ void generateChunk(chunkNode *c, int posX, int posZ)
 				}
 				else if (y < height)
 				{
-					c->chunk[x][y][z][0] = 2;
+					c->chunk[x][y][z][0] = y <= 60 ? 6 : 2;
 					c->chunk[x][y][z][1] = 0;
 				}
 				else if (y == height)
 				{
-					c->chunk[x][y][z][0] = 2;
-					c->chunk[x][y][z][1] = 1;
+					c->chunk[x][y][z][0] = y <= 60 ? 6 : 2;
+					c->chunk[x][y][z][1] = y <= 60 ? 0 : 1;
+				}
+				else if (y <= 59)
+				{
+					c->chunk[x][y][z][0] = 5;
+					c->chunk[x][y][z][1] = 0;
 				}
 				else
 				{
@@ -1517,6 +1529,7 @@ INCBIN(dirt, "V:/projetos/apisOrLibs/opengl/vulpescraft1/src/textures/default_di
 INCBIN(sand, "V:/projetos/apisOrLibs/opengl/vulpescraft1/src/textures/default_sand.png");
 INCBIN(oak_leaves, "V:/projetos/apisOrLibs/opengl/vulpescraft1/src/textures/default_oak_leaves.png");
 INCBIN(glass, "V:/projetos/apisOrLibs/opengl/vulpescraft1/src/textures/default_glass.png");
+INCBIN(water, "V:/projetos/apisOrLibs/opengl/vulpescraft1/src/textures/default_water.png");
 
 #define LOAD_TEXTURE(name) \
 	texturesData[textureCount++] = stbi_load_from_memory((const stbi_uc *)&incbin_ ## name ## _start, (char*)&incbin_ ## name ## _end - (char*)&incbin_ ## name ## _start, &width, &height, &comp, 0);
@@ -1570,13 +1583,16 @@ void init(void)
 	LOAD_TEXTURE(sand)            // 6
 	LOAD_TEXTURE(oak_leaves)      // 7
 	LOAD_TEXTURE(glass)           // 8
+	LOAD_TEXTURE(water)           // 9
 
 	blocks[1][0] = (block){.name = "Stone", .type = solid, .textures = {2, 2, 2, 2, 2, 2}, .averageColor = calcColor(2)};
 	blocks[2][0] = (block){.name = "Dirt", .type = solid, .textures = {5, 5, 5, 5, 5, 5}, .averageColor = calcColor(5)};
 	blocks[2][1] = (block){.name = "Dirt with grass", .type = solid, .textures = {3, 5, 4, 4, 4, 4}, .averageColor = calcColor(3)};
 	blocks[3][0] = (block){.name = "Oak leaves", .type = empty, .textures = {7, 7, 7, 7, 7, 7}, .averageColor = calcColor(7)};
 	blocks[4][0] = (block){.name = "Glass", .type = transparent, .textures = {8, 8, 8, 8, 8, 8}, .averageColor = calcColor(8)};
-
+	blocks[5][0] = (block){.name = "Water source", .type = transparent, .textures = {9, 9, 9, 9, 9, 9}, .averageColor = calcColor(9)};
+	blocks[6][0] = (block){.name = "Sand", .type = solid, .textures = {6, 6, 6, 6, 6, 6}, .averageColor = calcColor(6)};
+	
 	generateManyChunks(&dimension, 0, 0, &chunks, &chunkCount, &chunkLimit);
 	generateChunkSides(&dimension, chunks, 0, chunkCount);
 	generateMesh(chunks, 0, chunkCount);
