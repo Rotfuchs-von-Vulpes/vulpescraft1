@@ -197,17 +197,18 @@ const char *lightCasterFShader =
 		"uniform Light light;\n"
 		"void main()\n"
 		"{\n"
-		" if (texture(textures,vec3(TexCoords, TextureID)).a < .5) discard;\n"
-		" vec3 ambient=light.ambient*texture(textures,vec3(TexCoords, TextureID)).rgb;\n"
+		" vec4 tex = texture(textures,vec3(TexCoords, TextureID));"
+		" if (tex.a < .5) discard;\n"
+		" vec3 ambient=light.ambient*tex.rgb;\n"
 		" vec3 norm=normalize(Normal);\n"
 		" vec3 lightDir=normalize(-light.direction);\n"
 		" float diff=max(dot(norm,lightDir),0.);\n"
-		" vec3 diffuse=light.diffuse*diff*texture(textures,vec3(TexCoords, TextureID)).rgb;\n"
+		" vec3 diffuse=light.diffuse*diff*tex.rgb;\n"
 		" vec3 viewDir=normalize(viewPos-FragPos);\n"
 		" vec3 reflectDir=reflect(-lightDir,norm);\n"
 		" float spec=pow(max(dot(viewDir,reflectDir),0.),material.shininess);\n"
 		" vec3 result=ambient+diffuse;\n"
-		" FragColor = vec4(result, 1.);\n"
+		" FragColor = vec4(result, tex.a);\n"
 		"}";
 
 unsigned int shaderProgram[3];
@@ -218,7 +219,6 @@ int textureCount = 0;
 int shaderCount = 0;
 unsigned int uniformView;
 unsigned int uniformProjection;
-unsigned int uniformTransform;
 unsigned int uniformRealPos;
 unsigned int uniformOffset;
 unsigned int uniformMapScale;
@@ -392,6 +392,7 @@ typedef struct chunkNode
 	int meshCount;
 	int meshLimit;
 	meshCube *meshCubes;
+	int waterIndex;
 	int verticesBufferCount;
 	int verticesBufferLimit;
 	float *verticesBuffer;
@@ -765,6 +766,7 @@ bool hasAir(chunkNode *c, int x, int y, int z, int sideId[2])
 
 void addFloat(chunkNode *c, float number)
 {
+
 	c->verticesBuffer[c->verticesBufferCount++] = number;
 
 	if (c->verticesBufferCount + 1 >= c->verticesBufferLimit - 1)
@@ -812,31 +814,77 @@ void addIndices(chunkNode *c, int i1, int i2, int i3, int j1, int j2, int j3)
 
 void generateVertices(chunkNode *chunkNodes, int init, int count)
 {
+	
 	for (int i = init; i < count; i++)
 	{
 		chunkNode *c = &chunkNodes[i];
 
+		c->verticesBufferCount = 0;
+		c->indicesBufferCount = 0;
+
+		int *indicesBlocks = NULL;
+		int *indicesWater = NULL;
+		int blockCount = 0;
+		int waterCount = 0;
+
+		indicesBlocks = (int *)malloc(sizeof(int) * c->meshCount);
+		indicesWater = (int *)malloc(sizeof(int) * c->meshCount);
+
+		// printf("limite: %i\n", c->meshCount);
+
 		for (int j = 0; j < c->meshCount; j++)
 		{
-			meshCube cube = c->meshCubes[j];
+			meshCube *cube = &c->meshCubes[j];
+
+			// printf("i: %i\n", j);
+
+			if (cube->ID[0] == 5)
+			{
+				indicesWater[waterCount++] = j;
+			}
+			else
+			{
+				indicesBlocks[blockCount++] = j;
+			}
+		}
+
+		int waterIndex = blockCount;
+		// printf("agua: %i\n", waterCount);
+
+		for (int j = 0; j < waterCount; j++)
+		{
+			indicesBlocks[blockCount++] = indicesWater[j];
+		}
+
+		float offset = 0;
+
+		for (int j = 0; j < c->meshCount; j++)
+		{
+			meshCube *cube = &c->meshCubes[indicesBlocks[j]];
 			vec3 pos;
-			glm_vec3_copy(cube.position, pos);
-			glm_vec3_add(pos, (vec3){cube.chunk[0] * 16, 0, cube.chunk[1] * 16}, pos);
-			block b = blocks[cube.ID[0]][cube.ID[1]];
+			glm_vec3_copy(cube->position, pos);
+			glm_vec3_add(pos, (vec3){cube->chunk[0] * 16, 0, cube->chunk[1] * 16}, pos);
+			block b = blocks[cube->ID[0]][cube->ID[1]];
 			int top = b.textures[0];
 			int side = b.textures[2];
 			int down = b.textures[1];
 
-			if (cube.faces[0])
+			if (j == waterIndex)
 			{
-				int i1 = addVertex(c, pos[0] - .5, pos[1] + .5, pos[2] - .5, 0, 1, 0, 0, 0, top);
-				int i2 = addVertex(c, pos[0] - .5, pos[1] + .5, pos[2] + .5, 0, 1, 0, 0, 1, top);
-				int j1 = addVertex(c, pos[0] + .5, pos[1] + .5, pos[2] + .5, 0, 1, 0, 1, 1, top);
-				int j2 = addVertex(c, pos[0] + .5, pos[1] + .5, pos[2] - .5, 0, 1, 0, 1, 0, top);
+				c->waterIndex = c->indicesBufferCount;
+				offset = 2.f / 14;
+			} 
+
+			if (cube->faces[0])
+			{
+				int i1 = addVertex(c, pos[0] - .5, pos[1] + .5 - offset, pos[2] - .5, 0, 1, 0, 0, 0, top);
+				int i2 = addVertex(c, pos[0] - .5, pos[1] + .5 - offset, pos[2] + .5, 0, 1, 0, 0, 1, top);
+				int j1 = addVertex(c, pos[0] + .5, pos[1] + .5 - offset, pos[2] + .5, 0, 1, 0, 1, 1, top);
+				int j2 = addVertex(c, pos[0] + .5, pos[1] + .5 - offset, pos[2] - .5, 0, 1, 0, 1, 0, top);
 
 				addIndices(c, i1, i2, j1, j1, j2, i1);
 			}
-			if (cube.faces[1] && pos[1] > 0)
+			if (cube->faces[1] && pos[1] > 0)
 			{
 				int i1 = addVertex(c, pos[0] - .5, pos[1] - .5, pos[2] - .5, 0, -1, 0, 0, 0, down);
 				int i2 = addVertex(c, pos[0] + .5, pos[1] - .5, pos[2] - .5, 0, -1, 0, 1, 0, down);
@@ -845,7 +893,7 @@ void generateVertices(chunkNode *chunkNodes, int init, int count)
 
 				addIndices(c, i1, i2, j1, j1, j2, i1);
 			}
-			if (cube.faces[2])
+			if (cube->faces[2])
 			{
 				int i1 = addVertex(c, pos[0] - .5, pos[1] - .5, pos[2] + .5, 0, 0, 1, 0, 0, side);
 				int i2 = addVertex(c, pos[0] + .5, pos[1] - .5, pos[2] + .5, 0, 0, 1, 1, 0, side);
@@ -854,7 +902,7 @@ void generateVertices(chunkNode *chunkNodes, int init, int count)
 
 				addIndices(c, i1, i2, j1, j1, j2, i1);
 			}
-			if (cube.faces[3])
+			if (cube->faces[3])
 			{
 				int i1 = addVertex(c, pos[0] - .5, pos[1] - .5, pos[2] - .5, 0, 0, -1, 0, 0, side);
 				int i2 = addVertex(c, pos[0] - .5, pos[1] + .5, pos[2] - .5, 0, 0, -1, 0, 1, side);
@@ -863,7 +911,7 @@ void generateVertices(chunkNode *chunkNodes, int init, int count)
 
 				addIndices(c, i1, i2, j1, j1, j2, i1);
 			}
-			if (cube.faces[4])
+			if (cube->faces[4])
 			{
 				int i1 = addVertex(c, pos[0] + .5, pos[1] - .5, pos[2] - .5, 1, 0, 0, 0, 0, side);
 				int i2 = addVertex(c, pos[0] + .5, pos[1] + .5, pos[2] - .5, 1, 0, 0, 0, 1, side);
@@ -872,7 +920,7 @@ void generateVertices(chunkNode *chunkNodes, int init, int count)
 
 				addIndices(c, i1, i2, j1, j1, j2, i1);
 			}
-			if (cube.faces[5])
+			if (cube->faces[5])
 			{
 				int i1 = addVertex(c, pos[0] - .5, pos[1] - .5, pos[2] - .5, -1, 0, 0, 0, 0, side);
 				int i2 = addVertex(c, pos[0] - .5, pos[1] - .5, pos[2] + .5, -1, 0, 0, 1, 0, side);
@@ -1311,6 +1359,8 @@ void generateChunkNode(ht *dimension, const int posX, const int posZ, chunkNode 
 	chunkPtr->heightMap = (float *)malloc(16 * 16 * 4 * sizeof(float));
 	chunkPtr->height = (int *)malloc(16 * 16 * sizeof(int));
 
+	chunkPtr->waterIndex = -1;
+
 	memset(chunkPtr->chunk, 0, sizeof(chunkPtr->chunk));
 
 	generateChunk(chunkPtr, posX, posZ);
@@ -1668,7 +1718,6 @@ void init(void)
 
 	uniformView = glGetUniformLocation(shaderProgram[0], "view");
 	uniformProjection = glGetUniformLocation(shaderProgram[0], "projection");
-	uniformTransform = glGetUniformLocation(shaderProgram[0], "model");
 
 	unsigned int uniformLoc = glGetUniformLocation(shaderProgram[0], "light.direction");
 	glUniform3f(uniformLoc, -0.2f, -1.0f, -0.3f);
@@ -1683,6 +1732,10 @@ void init(void)
 
 	uniformLoc = glGetUniformLocation(shaderProgram[0], "material.shininess");
 	glUniform1f(uniformLoc, 32.0f);
+
+	uniformLoc = glGetUniformLocation(shaderProgram[0], "model");
+	mat4 model = GLM_MAT4_IDENTITY_INIT;
+	glUniformMatrix4fv(uniformLoc, 1, false, (float *)model);
 
 	glClearColor(0.6666f, 0.8156f, 0.9921f, 1.0f);
 	// vec4(.6666, .8156, .9921, 1.)
@@ -1769,7 +1822,6 @@ void init(void)
 
 	uniformLoc = glGetUniformLocation(shaderProgram[1], "scale");
 	glUniform3f(uniformLoc, mapScale, (float)screenWidth / (float)screenHeight * mapScale, 0);
-
 	// screen color
 	glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
 
@@ -1904,7 +1956,6 @@ void render(void)
 		glm_lookat(cameraPos, center, cameraUp, view);
 
 		glBindFramebuffer(GL_FRAMEBUFFER, fbo);
-		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); 
 		glEnable(GL_DEPTH_TEST);
 
 		glUseProgram(shaderProgram[0]);
@@ -1917,12 +1968,30 @@ void render(void)
 		glActiveTexture(GL_TEXTURE0);
 		glBindTexture(GL_TEXTURE_2D_ARRAY, texture);
 
-		mat4 model = GLM_MAT4_IDENTITY_INIT;
 		for (int i = 0; i <= chunksIFCount; i++)
 		{
-			glUniformMatrix4fv(uniformTransform, 1, false, (float *)model);
-			glBindVertexArray(chunks[chunksInFront[i]].VAO);
-			glDrawElements(GL_TRIANGLES, chunks[chunksInFront[i]].indicesBufferCount, GL_UNSIGNED_INT, 0);
+			chunkNode *c = &chunks[chunksInFront[i]];
+			glBindVertexArray(c->VAO);
+			if (c->waterIndex >= 0)
+			{
+				glDrawElements(GL_TRIANGLES, c->waterIndex, GL_UNSIGNED_INT, 0);
+			}
+			else
+			{
+				glDrawElements(GL_TRIANGLES, c->indicesBufferCount, GL_UNSIGNED_INT, 0);
+			}
+			glBindVertexArray(0);
+		}
+
+		for (int i = 0; i <= chunksIFCount; i++)
+		{
+			chunkNode *c = &chunks[chunksInFront[i]];
+			glBindVertexArray(c->VAO);
+			if (c->waterIndex >= 0)
+			{
+				glDrawElements(GL_TRIANGLES, (c->indicesBufferCount - c->waterIndex) + 1, GL_UNSIGNED_INT, (GLvoid*) (sizeof(int)*c->waterIndex));
+			}
+				
 			glBindVertexArray(0);
 		}
 
@@ -1946,7 +2015,7 @@ void render(void)
 		glUniform3f(uniformViewPos, cameraPos[0], cameraPos[1], cameraPos[2]);
 
 		glUseProgram(shaderProgram[1]);
-		glClear(GL_DEPTH_BUFFER_BIT);
+		// glClear(GL_DEPTH_BUFFER_BIT);
 
 		glActiveTexture(GL_TEXTURE0);
 
