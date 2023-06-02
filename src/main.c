@@ -39,6 +39,26 @@
 
 unsigned int mapVBO, mapVAO, quadVBO, quadVAO, mapEBO, fbo, rbo, depthBuffer;
 
+const char *mapsVShaderSrc = 
+		"#version 330 core\n"
+		"layout (location = 0) in vec2 aPos;\n"
+		"layout (location = 1) in vec2 aTexCoords;\n"
+		"out vec2 TexCoords;\n"
+		"void main()\n"
+		"{\n"
+		" gl_Position = vec4(aPos.x, aPos.y, 0.0, 1.0); \n"
+		" TexCoords = aTexCoords;\n"
+		"}";
+const char *mapsFShaderSrc = 
+		"#version 330 core\n"
+		"in vec2 TexCoord;\n"
+		"uniform sampler2D texture1;"
+		"uniform vec3 realPos;\n"
+		"out vec4 FragColor;\n"
+		"void main()\n"
+		"{\n"
+		" FragColor=texture(texture1, TexCoord);\n"
+		"}";
 const char *vertexShaderSrc = 
 		"#version 330 core\n"
 		"layout (location = 0) in vec2 aPos;\n"
@@ -121,7 +141,7 @@ const char *mapVShader =
 		"uniform float direction;\n"
 		"void main()\n"
 		"{\n"
-		" vec3 p = aPos.xyz - realPos;\n"
+		" vec3 p = aPos.xyz - 2. * realPos;\n"
     " float new_x = p.x*cos(direction) - p.y*sin(direction);\n"
     " float new_y = p.y*cos(direction) + p.x*sin(direction);\n"
 		"	gl_Position = vec4(vec3(new_x, new_y, p.z) * scale + offset, 1.0);\n"
@@ -487,11 +507,11 @@ bool walked = false;
 bool firstMouse = true;
 float yaw = -90.0f;
 float pitch = 0.0f;
-float lastX = (float)SCREEN_HEIGHT_INIT / 2.0;
+float lastX = (float)SCREEN_WIDTH_INIT / 2.0;
 float lastY = (float)SCREEN_HEIGHT_INIT / 2.0;
 
 float fov = 70.0f;
-float mapScale = 500. / SCREEN_WIDTH_INIT;
+float mapScale = 250. / SCREEN_WIDTH_INIT;
 bool mapview = false;
 bool firstKeyJ = true;
 
@@ -674,6 +694,7 @@ void processInput(GLFWwindow *window)
 void resizeCallback(GLFWwindow *window, int width, int height)
 {
 	if (width == 0 || height == 0) return;
+	calculateFrustum();
 	screenWidth = width;
 	screenHeight = height;
 	glViewport(0, 0, width, height);
@@ -683,7 +704,7 @@ void resizeCallback(GLFWwindow *window, int width, int height)
 	glUniformMatrix4fv(uniformProjection, 1, false, (float *)projection);
 
 	glUseProgram(shaderProgram[1]);
-	mapScale = 500. / width;
+	mapScale = 250. / width;
 	glUniform3f(uniformMapScale, mapScale, (float)width / (float)height * mapScale, 0);
 	glUniform3f(uniformOffset, (width - 300.) / width, (height - 300.) / height, 0);
 
@@ -1756,10 +1777,10 @@ void init(void)
 
 	float vertices[] = {
         // positions          // texture coords
-         0.5f,  0.5f, -1.0f,   1.0f, 1.0f, // top right
-         0.5f, -0.5f, -1.0f,   1.0f, 0.0f, // bottom right
-        -0.5f, -0.5f, -1.0f,   0.0f, 0.0f, // bottom left
-        -0.5f,  0.5f, -1.0f,   0.0f, 1.0f  // top left 
+         1.f,  1.f, -1.0f,   1.0f, 1.0f, // top right
+         1.f, -1.f, -1.0f,   1.0f, 0.0f, // bottom right
+        -1.f, -1.f, -1.0f,   0.0f, 0.0f, // bottom left
+        -1.f,  1.f, -1.0f,   0.0f, 1.0f  // top left 
     };
 	unsigned int indices[] = {
 			0, 2, 1, // first Triangle
@@ -1795,14 +1816,14 @@ void init(void)
 	uniformOffset = glGetUniformLocation(shaderProgram[1], "offset");
 	uniformMapScale = glGetUniformLocation(shaderProgram[1], "scale");
 	uniformCameraDirection = glGetUniformLocation(shaderProgram[1], "direction");
-	glUniform3f(uniformMapScale, mapScale, (float)width / (float)height * mapScale, 0);
+	glUniform3f(uniformMapScale, mapScale, (float)screenWidth / screenHeight * mapScale, 0);
 	cameraDirection = atan2(cameraFront[2], cameraFront[0]);
 	glUniform1f(uniformCameraDirection, cameraDirection);
 	glUniform3f(uniformOffset, (screenWidth - 300.) / screenWidth, (screenHeight - 300.) / screenHeight, 0);
 	cameraChunkPos[0] = cameraPos[0] - cameraChunk[0] * 16;
 	cameraChunkPos[1] = cameraPos[2] - cameraChunk[1] * 16;
-	float posX = mapScale * cameraChunkPos[1] / 140;
-	float posY = mapScale * cameraChunkPos[0] / 140;
+	float posX = 2 * cameraChunkPos[1] / (mapScale * screenWidth);
+	float posY = 2 * cameraChunkPos[0] / (mapScale * screenWidth);
 	glUniform3f(uniformRealPos, posX, posY, 0);
 
 	glGenVertexArrays(1, &mapVAO);
@@ -1825,8 +1846,6 @@ void init(void)
 	glBindBuffer(GL_ARRAY_BUFFER, 0);
 	glBindVertexArray(0);
 
-	uniformLoc = glGetUniformLocation(shaderProgram[1], "scale");
-	glUniform3f(uniformLoc, mapScale, (float)screenWidth / (float)screenHeight * mapScale, 0);
 	// screen color
 	glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
 
@@ -2033,8 +2052,8 @@ void render(void)
 		{
 			atualizeMovement();
 			calculateFrustum();
-			float posX = 2 * cameraChunkPos[1] / (mapScale * screenWidth);
-			float posY = 2 * cameraChunkPos[0] / (mapScale * screenWidth);
+			float posX = cameraChunkPos[1] / (mapScale * screenWidth);
+			float posY = cameraChunkPos[0] / (mapScale * screenWidth);
 			glUniform3f(uniformRealPos, posX, posY, 0);
 			walked = false;
 		}
