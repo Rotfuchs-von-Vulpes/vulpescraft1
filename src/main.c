@@ -1580,6 +1580,8 @@ INCBIN(sand, "V:/projetos/apisOrLibs/opengl/vulpescraft1/src/textures/default_sa
 INCBIN(oak_leaves, "V:/projetos/apisOrLibs/opengl/vulpescraft1/src/textures/default_oak_leaves.png");
 INCBIN(glass, "V:/projetos/apisOrLibs/opengl/vulpescraft1/src/textures/default_glass.png");
 INCBIN(water, "V:/projetos/apisOrLibs/opengl/vulpescraft1/src/textures/default_water.png");
+INCBIN(oak_log, "V:/projetos/apisOrLibs/opengl/vulpescraft1/src/textures/default_oak_tree.png");
+INCBIN(oak_log_top, "V:/projetos/apisOrLibs/opengl/vulpescraft1/src/textures/default_oak_tree_top.png");
 
 #define LOAD_TEXTURE(name) \
 	texturesData[textureCount++] = stbi_load_from_memory((const stbi_uc *)&incbin_ ## name ## _start, (char*)&incbin_ ## name ## _end - (char*)&incbin_ ## name ## _start, &width, &height, &comp, 0);
@@ -1634,6 +1636,8 @@ void init(void)
 	LOAD_TEXTURE(oak_leaves)      // 7
 	LOAD_TEXTURE(glass)           // 8
 	LOAD_TEXTURE(water)           // 9
+	LOAD_TEXTURE(oak_log)         // 10
+	LOAD_TEXTURE(oak_log_top)     // 11
 
 	blocks[1][0] = (block){.name = "Stone", .type = solid, .textures = {2, 2, 2, 2, 2, 2}, .averageColor = calcColor(2)};
 	blocks[2][0] = (block){.name = "Dirt", .type = solid, .textures = {5, 5, 5, 5, 5, 5}, .averageColor = calcColor(5)};
@@ -1642,6 +1646,7 @@ void init(void)
 	blocks[4][0] = (block){.name = "Glass", .type = transparent, .textures = {8, 8, 8, 8, 8, 8}, .averageColor = calcColor(8)};
 	blocks[5][0] = (block){.name = "Water source", .type = transparent, .textures = {9, 9, 9, 9, 9, 9}, .averageColor = calcColor(9)};
 	blocks[6][0] = (block){.name = "Sand", .type = solid, .textures = {6, 6, 6, 6, 6, 6}, .averageColor = calcColor(6)};
+	blocks[7][0] = (block){.name = "Sand", .type = solid, .textures = {11, 11, 10, 10, 10, 10}, .averageColor = calcColor(11)};
 	
 	generateManyChunks(&dimension, 0, 0, &chunks, &chunkCount, &chunkLimit);
 	generateChunkSides(&dimension, chunks, 0, chunkCount);
