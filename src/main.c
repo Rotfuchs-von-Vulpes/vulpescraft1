@@ -37,27 +37,35 @@
 	extern __attribute__((aligned(16))) const char incbin_ ## name ## _start[]; \
 	extern                              const char incbin_ ## name ## _end[]
 
-unsigned int mapVBO, mapVAO, quadVBO, quadVAO, mapEBO, fbo, rbo, depthBuffer;
+unsigned int mapVBO, mapVAO, quadVBO, quadVAO, mapEBO, fbo, rbo, depthBuffer, worldVBO, worldVAO, worldEBO;
 
 const char *mapsVShaderSrc = 
 		"#version 330 core\n"
 		"layout (location = 0) in vec2 aPos;\n"
 		"layout (location = 1) in vec2 aTexCoords;\n"
+		"uniform vec2 position;\n"
+		"uniform vec2 offset;\n"
+		"uniform vec2 scale;\n"
+		"uniform vec2 screen;\n"
 		"out vec2 TexCoords;\n"
 		"void main()\n"
 		"{\n"
-		" gl_Position = vec4(aPos.x, aPos.y, 0.0, 1.0); \n"
+		" vec2 p = scale * (vec2(aPos.x, aPos.y) + 2. * offset) - 2. * position / screen;\n"
+		" gl_Position = vec4(p.x, p.y, 0.0, 1.0);\n"
 		" TexCoords = aTexCoords;\n"
 		"}";
 const char *mapsFShaderSrc = 
 		"#version 330 core\n"
-		"in vec2 TexCoord;\n"
-		"uniform sampler2D texture1;"
-		"uniform vec3 realPos;\n"
+		"in vec2 TexCoords;\n"
+		"uniform sampler2D texture0;\n"
+		"uniform vec2 scale;\n"
+		"uniform vec2 screen;\n"
+		"in vec4 gl_FragCoord;\n"
 		"out vec4 FragColor;\n"
 		"void main()\n"
 		"{\n"
-		" FragColor=texture(texture1, TexCoord);\n"
+		" if (TexCoords.x <= 1. / (scale.x * screen.x) || TexCoords.y <= 1. / (scale.y * screen.y)) FragColor=vec4(1.);\n"
+		" else FragColor=texture(texture0, TexCoords);\n"
 		"}";
 const char *vertexShaderSrc = 
 		"#version 330 core\n"
@@ -231,7 +239,7 @@ const char *lightCasterFShader =
 		" FragColor = vec4(result, tex.a);\n"
 		"}";
 
-unsigned int shaderProgram[3];
+unsigned int shaderProgram[4];
 unsigned int textures[1024];
 unsigned char *texturesData[1024];
 unsigned int texture, fboTexture, textureColorbuffer;
@@ -251,6 +259,10 @@ unsigned int uniformInvView;
 unsigned int uniformPers;
 unsigned int uniformInvPers;
 unsigned int uniformViewPos;
+unsigned int uniformWorldMapScale;
+unsigned int uniformWorldMapOffset;
+unsigned int uniformWorldMapScreen;
+unsigned int uniformWorldMapPos;
 
 double lastTime;
 int nbFrames = 0;
@@ -511,8 +523,10 @@ float lastX = (float)SCREEN_WIDTH_INIT / 2.0;
 float lastY = (float)SCREEN_HEIGHT_INIT / 2.0;
 
 float fov = 70.0f;
-float mapScale = 250. / SCREEN_WIDTH_INIT;
-bool mapview = false;
+
+float minimapScale = 250. / SCREEN_WIDTH_INIT;
+bool mapView = true;
+float mapScale = 50. / SCREEN_WIDTH_INIT;
 bool firstKeyJ = true;
 
 void calculateFrustum(void)
@@ -534,8 +548,31 @@ void calculateFrustum(void)
 	}
 }
 
+vec2 wherePressed = {0, 0};
+bool canDrag = true;
+vec2 mousePosition = {0, 0};
+vec2 mapTranslation = {0, 0};
+vec2 target = {0, 0};
+
 void mouseCallback(GLFWwindow *window, double xposIn, double yposIn)
 {
+	if (mapView)
+	{
+		double x;
+		double y;
+		glfwGetCursorPos(window, &x, &y);
+		glm_vec2_copy((vec2){x, y}, mousePosition);
+
+		if (canDrag && glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) != GLFW_RELEASE)
+		{
+			vec2 draged;
+			glm_vec2_sub(target, mousePosition, draged);
+			glm_vec2_add(wherePressed, draged, mapTranslation);
+		}
+
+		glUniform2f(uniformWorldMapPos, mapTranslation[0], -mapTranslation[1]);
+	}
+
 	if (!cursorDisabled)
 		return;
 
@@ -591,6 +628,36 @@ void mouseCallback(GLFWwindow *window, double xposIn, double yposIn)
 	glUniform1f(uniformCameraDirection, cameraDirection);
 }
 
+void scrollCallback(GLFWwindow* window, double xoffset, double yoffset)
+{
+	if (mapView){
+		mapScale = mapScale * (yoffset / 2 + 1);
+		if (mapScale > 0.45)
+		{
+			mapScale = 0.45;
+			return;
+		}
+
+		vec2 halfScreen = {screenWidth / 2., screenHeight / 2.};
+		vec2 vect1;
+		vec2 vect2;
+
+		printf("%f\n", mapScale);
+
+		glm_vec2_sub(mousePosition, halfScreen, vect1);
+		glm_vec2_add(vect1, mapTranslation, vect2);
+		glm_vec2_scale(vect2, yoffset / 2, vect2);
+		glm_vec2_add(vect2, mapTranslation, mapTranslation);
+		glm_vec2_add(vect1, mapTranslation, vect1);
+		glm_vec2_copy(vect1, mapTranslation);
+
+		glfwSetCursorPos(window, halfScreen[0], halfScreen[1]);
+
+		glUniform2f(uniformWorldMapScale, mapScale, mapScale * (float)screenWidth / screenHeight);
+		glUniform2f(uniformWorldMapPos, mapTranslation[0], -mapTranslation[1]);
+	}
+}
+
 void processInput(GLFWwindow *window)
 {
 	if (glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS)
@@ -640,17 +707,17 @@ void processInput(GLFWwindow *window)
 			lastX = (float)screenWidth / 2;
 			lastY = (float)screenHeight / 2;
 
-			if (mapview)
+			if (mapView)
 			{
 				glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 				cursorDisabled = true;
-				mapview = false;
+				mapView = false;
 			}
 			else
 			{
 				glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
 				cursorDisabled = false;
-				mapview = true;
+				mapView = true;
 			}
 		}
 	}
@@ -704,8 +771,8 @@ void resizeCallback(GLFWwindow *window, int width, int height)
 	glUniformMatrix4fv(uniformProjection, 1, false, (float *)projection);
 
 	glUseProgram(shaderProgram[1]);
-	mapScale = 250. / width;
-	glUniform3f(uniformMapScale, mapScale, (float)width / (float)height * mapScale, 0);
+	minimapScale = 250. / width;
+	glUniform3f(uniformMapScale, minimapScale, (float)width / (float)height * minimapScale, 0);
 	glUniform3f(uniformOffset, (width - 300.) / width, (height - 300.) / height, 0);
 
 	glUseProgram(shaderProgram[2]);
@@ -717,6 +784,25 @@ void resizeCallback(GLFWwindow *window, int width, int height)
 	glm_mat4_inv(projection, invProjection);
 	glUniformMatrix4fv(uniformPers, 1, false, (float *)projection);
 	glUniformMatrix4fv(uniformInvPers, 1, false, (float *)invProjection);
+
+	glUseProgram(shaderProgram[3]);
+	float scale = 50. / screenWidth;
+	glUniform2f(uniformWorldMapScale, scale, (float)width / height * scale);
+	glUniform2f(uniformWorldMapScreen, width, height);
+}
+
+void mouseButtonCallback(GLFWwindow *window, int button, int action, int mods)
+{
+	if (button == GLFW_MOUSE_BUTTON_LEFT && action == GLFW_PRESS)
+	{
+		glm_vec2_copy(mousePosition, target);
+		glm_vec2_copy(mapTranslation, wherePressed);
+		canDrag = true;
+	}
+	if (button == GLFW_MOUSE_BUTTON_LEFT && action == GLFW_RELEASE)
+	{
+		canDrag = false;
+	}
 }
 
 bool hasAir(chunkNode *c, int x, int y, int z, int sideId[2])
@@ -1816,14 +1902,14 @@ void init(void)
 	uniformOffset = glGetUniformLocation(shaderProgram[1], "offset");
 	uniformMapScale = glGetUniformLocation(shaderProgram[1], "scale");
 	uniformCameraDirection = glGetUniformLocation(shaderProgram[1], "direction");
-	glUniform3f(uniformMapScale, mapScale, (float)screenWidth / screenHeight * mapScale, 0);
+	glUniform3f(uniformMapScale, minimapScale, (float)screenWidth / screenHeight * minimapScale, 0);
 	cameraDirection = atan2(cameraFront[2], cameraFront[0]);
 	glUniform1f(uniformCameraDirection, cameraDirection);
 	glUniform3f(uniformOffset, (screenWidth - 300.) / screenWidth, (screenHeight - 300.) / screenHeight, 0);
 	cameraChunkPos[0] = cameraPos[0] - cameraChunk[0] * 16;
 	cameraChunkPos[1] = cameraPos[2] - cameraChunk[1] * 16;
-	float posX = 2 * cameraChunkPos[1] / (mapScale * screenWidth);
-	float posY = 2 * cameraChunkPos[0] / (mapScale * screenWidth);
+	float posX = 2 * cameraChunkPos[1] / (minimapScale * screenWidth);
+	float posY = 2 * cameraChunkPos[0] / (minimapScale * screenWidth);
 	glUniform3f(uniformRealPos, posX, posY, 0);
 
 	glGenVertexArrays(1, &mapVAO);
@@ -1950,6 +2036,60 @@ void init(void)
 	glUniform3f(uniformViewPos, cameraPos[0], cameraPos[1], cameraPos[2]);
 	uniformView2 = glGetUniformLocation(shaderProgram[2], "viewMatrix");
 	glUniformMatrix4fv(uniformView2, 1, false, (float *)view);
+	
+	
+	glShaderSource(vertexShader, 1, &mapsVShaderSrc, NULL);
+	glCompileShader(vertexShader);
+	glGetShaderiv(vertexShader, GL_COMPILE_STATUS, &success);
+	if (!success)
+	{
+		glGetShaderInfoLog(vertexShader, 512, NULL, infoLog);
+		printf("ERROR::SHADER::VERTEX::COMPILATION_FAILED\n%s\n", infoLog);
+	}
+
+	fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
+
+	glShaderSource(fragmentShader, 1, &mapsFShaderSrc, NULL);
+	glCompileShader(fragmentShader);
+	
+	glGetShaderiv(fragmentShader, GL_COMPILE_STATUS, &success);
+	if (!success)
+	{
+		glGetShaderInfoLog(fragmentShader, 512, NULL, infoLog);
+		printf("ERROR::SHADER::FRAGMENT::COMPILATION_FAILED\n%s\n", infoLog);
+	}
+
+	loadShader(vertexShader, fragmentShader);
+
+	glGenVertexArrays(1, &worldVAO);
+	glGenBuffers(1, &worldVBO);
+	glGenBuffers(1, &worldEBO);
+
+	glBindVertexArray(worldVAO);
+
+	glBindBuffer(GL_ARRAY_BUFFER, worldVBO);
+	glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
+
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, worldEBO);
+	glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), indices, GL_STATIC_DRAW);
+
+	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void *)0);
+	glEnableVertexAttribArray(0);
+  glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void *)(3 * sizeof(float)));
+  glEnableVertexAttribArray(1);
+
+	glBindBuffer(GL_ARRAY_BUFFER, 0);
+	glBindVertexArray(0);
+
+	uniformWorldMapScale = glGetUniformLocation(shaderProgram[3], "scale");
+	float scale = 50. / screenWidth;
+	glUniform2f(uniformWorldMapScale, scale, (float)screenWidth / screenHeight * scale);
+	uniformWorldMapOffset = glGetUniformLocation(shaderProgram[3], "offset");
+	glUniform2f(uniformWorldMapOffset, 0, 0);
+	uniformWorldMapScreen = glGetUniformLocation(shaderProgram[3], "screen");
+	glUniform2f(uniformWorldMapScreen, screenWidth, screenHeight);
+	uniformWorldMapPos = glGetUniformLocation(shaderProgram[3], "position");
+	glUniform2f(uniformWorldMapPos, 0, 0);
 
 	
 	printf("%i\n", glGetError());
@@ -1969,9 +2109,18 @@ void render(void)
 {
 	currentTime = glfwGetTime();
 
-	if (mapview)
+	if (mapView)
 	{
-		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); 
+		glUseProgram(shaderProgram[3]);
+		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+		for (int i = 0; i < chunkCount; i++)
+		{
+			glUniform2f(uniformWorldMapOffset, chunks[i].posZ, chunks[i].posX);
+			glBindTexture(GL_TEXTURE_2D, chunks[i].texture);
+			glBindVertexArray(worldVAO);
+			glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
+			glBindVertexArray(0);
+		}
 	}
 	else
 	{
@@ -2052,8 +2201,8 @@ void render(void)
 		{
 			atualizeMovement();
 			calculateFrustum();
-			float posX = cameraChunkPos[1] / (mapScale * screenWidth);
-			float posY = cameraChunkPos[0] / (mapScale * screenWidth);
+			float posX = cameraChunkPos[1] / (minimapScale * screenWidth);
+			float posY = cameraChunkPos[0] / (minimapScale * screenWidth);
 			glUniform3f(uniformRealPos, posX, posY, 0);
 			walked = false;
 		}
@@ -2090,7 +2239,10 @@ int main(int argc, char **args)
 	gladLoadGLLoader((GLADloadproc)glfwGetProcAddress);
 	glfwSetWindowSizeCallback(window, resizeCallback);
 	glfwSetCursorPosCallback(window, mouseCallback);
-	glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+	glfwSetScrollCallback(window, scrollCallback);
+	glfwSetMouseButtonCallback(window, mouseButtonCallback);
+	if (!mapView)
+		glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 
 	init();
 	// gui_init(window);
