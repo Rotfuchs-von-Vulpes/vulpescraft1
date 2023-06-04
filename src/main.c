@@ -642,8 +642,6 @@ void scrollCallback(GLFWwindow* window, double xoffset, double yoffset)
 		vec2 vect1;
 		vec2 vect2;
 
-		printf("%f\n", mapScale);
-
 		glm_vec2_sub(mousePosition, halfScreen, vect1);
 		glm_vec2_add(vect1, mapTranslation, vect2);
 		glm_vec2_scale(vect2, yoffset / 2, vect2);
