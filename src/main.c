@@ -92,12 +92,8 @@ const char *fragmentShaderSrc =
 		"uniform vec3 sun;\n"
 		"uniform vec2 screen;\n"
 		"uniform float fov;\n"
-		"vec4 fog_colour = vec4(.6666, .8156, .9921, 1.);\n"
+		"uniform int water;\n"
 		"vec4 sky_colour = vec4(.4824, .5725, .9804, 1.);\n"
-		"float fog_maxdist = 150.;\n"
-		"float fog_mindist = 100.;\n"
-		"float fogStart = 110.;\n"
-		"float fogDensity = .0375;\n"
 		"vec4 CalcEyeFromWindow(in vec3 windowSpace)\n"
 		"{\n"
 		" vec3 ndcPos;\n"
@@ -113,6 +109,15 @@ const char *fragmentShaderSrc =
 		"\n"
 		"void main()\n"
 		"{\n"
+		" float fogStart = 110.;\n"
+		" float fogDensity = .0375;\n"
+		" vec4 fog_colour = vec4(.6666, .8156, .9921, 1.);\n"
+		" if (water == 1)\n"
+		" {\n"
+		"  fogStart = 0.;\n"
+		"  fogDensity = .5;\n"
+		"  fog_colour = vec4(.0196, .0196, .2, 1.);\n"
+		" }\n"
 		" vec2 uv = TexCoords;\n"
     " uv *=  1. - uv.yx;\n"
     " float vig = uv.x*uv.y * 15.0;\n"
@@ -259,6 +264,7 @@ unsigned int uniformInvView;
 unsigned int uniformPers;
 unsigned int uniformInvPers;
 unsigned int uniformViewPos;
+unsigned int uniformWater;
 unsigned int uniformWorldMapScale;
 unsigned int uniformWorldMapOffset;
 unsigned int uniformWorldMapScreen;
@@ -514,6 +520,7 @@ bool cursorDisabled = true;
 bool firstKeyE = true;
 
 bool walked = false;
+bool isOnWater = false;
 
 
 bool firstMouse = true;
@@ -525,7 +532,7 @@ float lastY = (float)SCREEN_HEIGHT_INIT / 2.0;
 float fov = 70.0f;
 
 float minimapScale = 250. / SCREEN_WIDTH_INIT;
-bool mapView = true;
+bool mapView = false;
 float mapScale = 50. / SCREEN_WIDTH_INIT;
 bool firstKeyJ = true;
 
@@ -988,6 +995,7 @@ void generateVertices(chunkNode *chunkNodes, int init, int count)
 				int j2 = addVertex(c, pos[0] + .5, pos[1] + .5 - offset, pos[2] - .5, 0, 1, 0, 1, 0, top);
 
 				addIndices(c, i1, i2, j1, j1, j2, i1);
+				if (j >= waterIndex) addIndices(c, i1, j2, j1, j1, i2, i1);
 			}
 			if (cube->faces[1] && pos[1] > 0)
 			{
@@ -997,6 +1005,7 @@ void generateVertices(chunkNode *chunkNodes, int init, int count)
 				int j2 = addVertex(c, pos[0] - .5, pos[1] - .5, pos[2] + .5, 0, -1, 0, 0, 1, down);
 
 				addIndices(c, i1, i2, j1, j1, j2, i1);
+				if (j >= waterIndex) addIndices(c, i1, j2, j1, j1, i2, i1);
 			}
 			if (cube->faces[2])
 			{
@@ -1006,6 +1015,7 @@ void generateVertices(chunkNode *chunkNodes, int init, int count)
 				int j2 = addVertex(c, pos[0] - .5, pos[1] + .5, pos[2] + .5, 0, 0, 1, 0, 1, side);
 
 				addIndices(c, i1, i2, j1, j1, j2, i1);
+				if (j >= waterIndex) addIndices(c, i1, j2, j1, j1, i2, i1);
 			}
 			if (cube->faces[3])
 			{
@@ -1015,6 +1025,7 @@ void generateVertices(chunkNode *chunkNodes, int init, int count)
 				int j2 = addVertex(c, pos[0] + .5, pos[1] - .5, pos[2] - .5, 0, 0, -1, 1, 0, side);
 
 				addIndices(c, i1, i2, j1, j1, j2, i1);
+				if (j >= waterIndex) addIndices(c, i1, j2, j1, j1, i2, i1);
 			}
 			if (cube->faces[4])
 			{
@@ -1024,6 +1035,7 @@ void generateVertices(chunkNode *chunkNodes, int init, int count)
 				int j2 = addVertex(c, pos[0] + .5, pos[1] - .5, pos[2] + .5, 1, 0, 0, 1, 0, side);
 
 				addIndices(c, i1, i2, j1, j1, j2, i1);
+				if (j >= waterIndex) addIndices(c, i1, j2, j1, j1, i2, i1);
 			}
 			if (cube->faces[5])
 			{
@@ -1033,6 +1045,7 @@ void generateVertices(chunkNode *chunkNodes, int init, int count)
 				int j2 = addVertex(c, pos[0] - .5, pos[1] + .5, pos[2] - .5, -1, 0, 0, 0, 1, side);
 
 				addIndices(c, i1, i2, j1, j1, j2, i1);
+				if (j >= waterIndex) addIndices(c, i1, j2, j1, j1, i2, i1);
 			}
 		}
 	}
@@ -2034,6 +2047,8 @@ void init(void)
 	glUniform3f(uniformViewPos, cameraPos[0], cameraPos[1], cameraPos[2]);
 	uniformView2 = glGetUniformLocation(shaderProgram[2], "viewMatrix");
 	glUniformMatrix4fv(uniformView2, 1, false, (float *)view);
+	uniformWater = glGetUniformLocation(shaderProgram[2], "water");
+	glUniform1i(uniformWater, 0);
 	
 	
 	glShaderSource(vertexShader, 1, &mapsVShaderSrc, NULL);
@@ -2203,6 +2218,33 @@ void render(void)
 			float posY = cameraChunkPos[0] / (minimapScale * screenWidth);
 			glUniform3f(uniformRealPos, posX, posY, 0);
 			walked = false;
+
+			chunkNode* c = &chunks[getChunkIdx(&dimension, cameraChunk[0], cameraChunk[1])];
+
+			int x = floor(cameraChunkPos[0] + .5);
+			int y = floor(cameraPos[1] + .5);
+			int z = floor(cameraChunkPos[1] + .5);
+
+			if (x > 15) x = 15;
+			if (z > 15) z = 15;
+
+			glUseProgram(shaderProgram[2]);
+			if (c->chunk[x][y][z][0] == 5)
+			{
+				if (!isOnWater)
+				{
+					glUniform1i(uniformWater, 1);
+				}
+				isOnWater = true;
+			}
+			else
+			{
+				if (isOnWater)
+				{
+					glUniform1i(uniformWater, 0);
+				}
+				isOnWater = false;
+			}
 		}
 	}
 
