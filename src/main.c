@@ -64,8 +64,8 @@ const char *mapsFShaderSrc =
 		"out vec4 FragColor;\n"
 		"void main()\n"
 		"{\n"
-		" if (TexCoords.x <= 1. / (scale.x * screen.x) || TexCoords.y <= 1. / (scale.y * screen.y)) FragColor=vec4(1.);\n"
-		" else FragColor=texture(texture0, TexCoords);\n"
+		" FragColor=texture(texture0, TexCoords);"
+		" if (scale.x > 0.02 && (TexCoords.x <= 1. / (scale.x * screen.x) || TexCoords.y <= 1. / (scale.y * screen.y))) FragColor+=vec4(.25);\n"
 		"}";
 const char *vertexShaderSrc = 
 		"#version 330 core\n"
