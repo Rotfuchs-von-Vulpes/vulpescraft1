@@ -518,7 +518,6 @@ float lastFrame = 0.0f;
 
 bool cursorDisabled = true;
 bool firstKeyE = true;
-
 bool walked = false;
 bool isOnWater = false;
 
@@ -662,6 +661,8 @@ void scrollCallback(GLFWwindow* window, double xoffset, double yoffset)
 		glUniform2f(uniformWorldMapPos, mapTranslation[0], -mapTranslation[1]);
 	}
 }
+
+bool debugVar = false;
 
 void processInput(GLFWwindow *window)
 {
@@ -2225,8 +2226,16 @@ void render(void)
 			int y = floor(cameraPos[1] + .5);
 			int z = floor(cameraChunkPos[1] + .5);
 
-			if (x > 15) x = 15;
-			if (z > 15) z = 15;
+			if (x > 15)
+			{
+				c = &chunks[c->east];
+				x = 0;
+			}
+			if (z > 15)
+			{
+				c = &chunks[c->north];
+				z = 0;
+			};
 
 			glUseProgram(shaderProgram[2]);
 			if (c->chunk[x][y][z][0] == 5)
