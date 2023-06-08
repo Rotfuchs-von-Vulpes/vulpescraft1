@@ -402,7 +402,7 @@ int getChunkIdx(ht *t, const int posX, const int posZ)
 	}
 }
 
-ht dimension = HT_INIT;
+ht overworld = HT_INIT;
 
 typedef int id[2];
 typedef id chunk[16][256][16];
@@ -503,13 +503,15 @@ mat4 invProjection;
 float near = .1f;
 float far = 1000.f;
 
-vec3 cameraPos = {8.f, 80.f, 8.f};
+
+// 100000.f
+vec3 cameraPos = {10.f, 80.f, 8.f};
 vec3 cameraFront = {0.f, 0.f, -1.f};
 vec3 cameraUp = {0.f, 1.f, 0.f};
 vec3 cameraRight = {1.f, 0.f, 0.f};
-ivec2 lastChunk = {0, 0};
-ivec2 cameraChunk = {0, 0};
-vec2 cameraChunkPos = {0, 0};
+ivec2 lastChunk;
+ivec2 cameraChunk;
+vec2 cameraChunkPos;
 float cameraDirection;
 float lastCameraDirection = 0;
 
@@ -976,7 +978,7 @@ void generateVertices(chunkNode *chunkNodes, int init, int count)
 			meshCube *cube = &c->meshCubes[indicesBlocks[j]];
 			vec3 pos;
 			glm_vec3_copy(cube->position, pos);
-			glm_vec3_add(pos, (vec3){cube->chunk[0] * 16, 0, cube->chunk[1] * 16}, pos);
+			glm_vec3_add(pos, (vec3){c->posX * 16, 0, c->posZ * 16}, pos);
 			block b = blocks[cube->ID[0]][cube->ID[1]];
 			int top = b.textures[0];
 			int side = b.textures[2];
@@ -1540,7 +1542,7 @@ void atualizeMovement(void)
 		{
 			for (int j = cameraChunk[1] - viewDistance; j <= cameraChunk[1] + viewDistance; j++)
 			{
-				generateChunkNode(&dimension, i, j, &chunks, &chunkCount, &chunkLimit);
+				generateChunkNode(&overworld, i, j, &chunks, &chunkCount, &chunkLimit);
 			}
 		}
 
@@ -1551,7 +1553,7 @@ void atualizeMovement(void)
 			int posX = cameraChunk[0] + signX * viewDistance - 2 * signX;
 			for (int i = cameraChunk[1] - viewDistance; i <= cameraChunk[1] + viewDistance; i++)
 			{
-				int index = getChunkIdx(&dimension, posX, i);
+				int index = getChunkIdx(&overworld, posX, i);
 				if (index >= 0)
 				{
 					chunks[index].meshCount = 0;
@@ -1570,7 +1572,7 @@ void atualizeMovement(void)
 
 			for (int i = cameraChunk[0] - viewDistance; i <= cameraChunk[0] + viewDistance; i++)
 			{
-				int index = getChunkIdx(&dimension, i, posZ);
+				int index = getChunkIdx(&overworld, i, posZ);
 				if (index >= 0)
 				{
 					chunks[index].meshCount = 0;
@@ -1582,11 +1584,11 @@ void atualizeMovement(void)
 			}
 		}
 
-		generateChunkSides(&dimension, chunks, lastChunkCount, chunkCount);
+		generateChunkSides(&overworld, chunks, lastChunkCount, chunkCount);
 		generateMesh(chunks, lastChunkCount, chunkCount);
 		generateVertices(chunks, lastChunkCount, chunkCount);
 		generateChunksMap(chunks, lastChunkCount, chunkCount);
-		generateMiniMap(&dimension, cameraChunk[0], cameraChunk[1]);
+		generateMiniMap(&overworld, cameraChunk[0], cameraChunk[1]);
 
 		for (int i = lastChunkCount; i <= chunkCount; i++)
 		{
@@ -1599,7 +1601,7 @@ void atualizeMovement(void)
 		{
 			for (int j = cameraChunk[1] - viewDistance; j <= cameraChunk[1] + viewDistance; j++)
 			{
-				int idx = getChunkIdx(&dimension, i, j);
+				int idx = getChunkIdx(&overworld, i, j);
 				if (idx >= 0 && idx <= chunkCount)
 				{
 					chunksToView[chunksTVCount++] = idx;
@@ -1767,12 +1769,18 @@ void init(void)
 	blocks[6][0] = (block){.name = "Sand", .type = solid, .textures = {6, 6, 6, 6, 6, 6}, .averageColor = calcColor(6)};
 	blocks[7][0] = (block){.name = "Sand", .type = solid, .textures = {11, 11, 10, 10, 10, 10}, .averageColor = calcColor(11)};
 	
-	generateManyChunks(&dimension, 0, 0, &chunks, &chunkCount, &chunkLimit);
-	generateChunkSides(&dimension, chunks, 0, chunkCount);
+	cameraChunk[0] = (int)floor(cameraPos[0] / 16);
+	cameraChunk[1] = (int)floor(cameraPos[2] / 16);
+	cameraChunkPos[0] = cameraPos[0] - cameraChunk[0] * 16;
+	cameraChunkPos[1] = cameraPos[2] - cameraChunk[1] * 16;
+	glm_ivec2_copy(cameraChunk, lastChunk);
+
+	generateManyChunks(&overworld, cameraChunk[0], cameraChunk[1], &chunks, &chunkCount, &chunkLimit);
+	generateChunkSides(&overworld, chunks, 0, chunkCount);
 	generateMesh(chunks, 0, chunkCount);
 	generateVertices(chunks, 0, chunkCount);
 	generateChunksMap(chunks, 0, chunkCount);
-	generateMiniMap(&dimension, 0, 0);
+	generateMiniMap(&overworld, 0, 0);
 
 	glEnable(GL_DEPTH_TEST);
 	glEnable(GL_CULL_FACE);
@@ -2220,7 +2228,7 @@ void render(void)
 			glUniform3f(uniformRealPos, posX, posY, 0);
 			walked = false;
 
-			chunkNode* c = &chunks[getChunkIdx(&dimension, cameraChunk[0], cameraChunk[1])];
+			chunkNode* c = &chunks[getChunkIdx(&overworld, cameraChunk[0], cameraChunk[1])];
 
 			int x = floor(cameraChunkPos[0] + .5);
 			int y = floor(cameraPos[1] + .5);
