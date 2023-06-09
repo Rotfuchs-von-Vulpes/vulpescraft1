@@ -282,6 +282,110 @@ char title[100];
 int screenWidth = SCREEN_WIDTH_INIT;
 int screenHeight = SCREEN_HEIGHT_INIT;
 
+typedef double vec3d[3];
+
+#define vec3_to_vec3d(v) \
+(vec3d){ v[0], v[1], v[2] }
+
+CGLM_INLINE
+void vec3d_add(vec3d a, vec3d b, vec3d dest) {
+  dest[0] = a[0] + b[0];
+  dest[1] = a[1] + b[1];
+  dest[2] = a[2] + b[2];
+}
+
+CGLM_INLINE
+void vec3d_sub(vec3d a, vec3d b, vec3d dest) {
+  dest[0] = a[0] - b[0];
+  dest[1] = a[1] - b[1];
+  dest[2] = a[2] - b[2];
+}
+
+CGLM_INLINE
+double vec3d_dot(vec3d a, vec3d b) {
+  return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+}
+
+CGLM_INLINE
+double vec3d_norm2(vec3d v) {
+  return vec3d_dot(v, v);
+}
+
+CGLM_INLINE
+double vec3d_norm(vec3d v) {
+  return sqrt(vec3d_norm2(v));
+}
+
+CGLM_INLINE
+void vec3d_scale(vec3d v, double s, vec3d dest) {
+  dest[0] = v[0] * s;
+  dest[1] = v[1] * s;
+  dest[2] = v[2] * s;
+}
+
+CGLM_INLINE
+void vec3d_normalize(vec3d v) {
+  float norm;
+
+  norm = vec3d_norm(v);
+
+  if (norm == 0.) {
+    v[0] = v[1] = v[2] = 0.;
+    return;
+  }
+
+  vec3d_scale(v, 1. / norm, v);
+}
+
+CGLM_INLINE
+void vec3d_copy(vec3d a, vec3d dest) {
+  dest[0] = a[0];
+  dest[1] = a[1];
+  dest[2] = a[2];
+}
+
+CGLM_INLINE
+void vec3d_cross(vec3d a, vec3d b, vec3d dest) {
+  vec3d c;
+  /* (u2.v3 - u3.v2, u3.v1 - u1.v3, u1.v2 - u2.v1) */
+  c[0] = a[1] * b[2] - a[2] * b[1];
+  c[1] = a[2] * b[0] - a[0] * b[2];
+  c[2] = a[0] * b[1] - a[1] * b[0];
+  vec3d_copy(c, dest);
+}
+
+CGLM_INLINE
+void vec3d_crossn(vec3d a, vec3d b, vec3d dest) {
+  vec3d_cross(a, b, dest);
+  vec3d_normalize(dest);
+}
+
+CGLM_INLINE
+void lookat(vec3d eye, vec3d center, vec3 up, mat4 dest) {
+  CGLM_ALIGN(8) vec3d f, u, s;
+
+  vec3d_sub(center, eye, f);
+  vec3d_normalize(f);
+
+  vec3d_crossn(f, vec3_to_vec3d(up), s);
+  vec3d_cross(s, f, u);
+
+  dest[0][0] = s[0];
+  dest[0][1] = u[0];
+  dest[0][2] =-f[0];
+  dest[1][0] = s[1];
+  dest[1][1] = u[1];
+  dest[1][2] =-f[1];
+  dest[2][0] = s[2];
+  dest[2][1] = u[2];
+  dest[2][2] =-f[2];
+  dest[3][0] =-vec3d_dot(s, eye);
+  dest[3][1] =-vec3d_dot(u, eye);
+  dest[3][2] = vec3d_dot(f, eye);
+  dest[0][3] = dest[1][3] = dest[2][3] = 0.0f;
+  dest[3][3] = 1.0f;
+}
+
 void loadShader(unsigned int vertexShader, unsigned int fragmentShader)
 {
 	shaderProgram[shaderCount] = glCreateProgram();
@@ -506,7 +610,7 @@ float far = 1000.f;
 
 
 // 100000.f
-vec3 cameraPos = {100000.f, 80.f, 8.f};
+vec3d cameraPos = {100000.f, 80.f, 8.f};
 vec3 cameraFront = {0.f, 0.f, -1.f};
 vec3 cameraUp = {0.f, 1.f, 0.f};
 vec3 cameraRight = {1.f, 0.f, 0.f};
@@ -545,9 +649,10 @@ void calculateFrustum(void)
 	mat4 viewPos;
 	mat4 MPV;
 	glm_mat4_copy(view, viewPos);
-	vec3 center;
-	glm_vec3_add(cameraPos, cameraFront, center);
-	glm_lookat(cameraPos, center, cameraUp, viewPos);
+	vec3d center;
+	vec3d front;
+	vec3d_add(cameraPos, vec3_to_vec3d(cameraFront), center);
+	lookat(cameraPos, center, cameraUp, viewPos);
 	glm_mat4_mul(projection, viewPos, MPV);
 
 	for (int i = 0; i < chunksTVCount; i++)
@@ -743,13 +848,13 @@ void processInput(GLFWwindow *window)
 	if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
 	{
 		glm_vec3_scale(cameraFront, cameraSpeed, scale);
-		glm_vec3_add(cameraPos, scale, cameraPos);
+		vec3d_add(cameraPos, vec3_to_vec3d(scale), cameraPos);
 		walked = true;
 	}
 	if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
 	{
 		glm_vec3_scale(cameraFront, -cameraSpeed, scale);
-		glm_vec3_add(cameraPos, scale, cameraPos);
+		vec3d_add(cameraPos, vec3_to_vec3d(scale), cameraPos);
 		walked = true;
 	}
 	if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
@@ -757,7 +862,7 @@ void processInput(GLFWwindow *window)
 		glm_cross(cameraFront, cameraUp, cross);
 		glm_normalize(cross);
 		glm_vec3_scale(cross, -cameraSpeed, scale);
-		glm_vec3_add(cameraPos, scale, cameraPos);
+		vec3d_add(cameraPos, vec3_to_vec3d(scale), cameraPos);
 		walked = true;
 	}
 	if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
@@ -765,7 +870,7 @@ void processInput(GLFWwindow *window)
 		glm_cross(cameraFront, cameraUp, cross);
 		glm_normalize(cross);
 		glm_vec3_scale(cross, cameraSpeed, scale);
-		glm_vec3_add(cameraPos, scale, cameraPos);
+		vec3d_add(cameraPos, vec3_to_vec3d(scale), cameraPos);
 		walked = true;
 	}
 }
