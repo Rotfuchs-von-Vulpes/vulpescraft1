@@ -464,7 +464,7 @@ hashFunction(int8_t const *cstr, int len)
 	return result;
 }
 
-#define EXP 20
+#define EXP 27
 // Initialize all slots to an "empty" value (null)
 #define HT_INIT \
 	{		          \
@@ -1678,13 +1678,25 @@ void generateManyChunks(ht *dimension, int posX, int posZ, chunkNode **chunkNode
 	}
 }
 
-void atualizeMovement(void)
+void calcPos(void)
 {
 	cameraChunk[0] = (int)floor(cameraPos[0] / 16);
 	cameraChunk[1] = (int)floor(cameraPos[2] / 16);
 	cameraChunkPos[0] = cameraPos[0] - cameraChunk[0] * 16;
 	cameraChunkPos[1] = cameraPos[1];
 	cameraChunkPos[2] = cameraPos[2] - cameraChunk[1] * 16;
+}
+
+void calcMap(void)
+{
+	glUseProgram(shaderProgram[2]);
+	float posX = cameraChunkPos[2] / (minimapScale * screenWidth);
+	float posY = cameraChunkPos[0] / (minimapScale * screenWidth);
+	glUniform3f(uniformRealPos, posX, posY, 0);
+}
+
+void atualizeMovement(void)
+{
 	if (lastChunk[0] != cameraChunk[0] || lastChunk[1] != cameraChunk[1])
 	{
 		int lastChunkCount = chunkCount;
@@ -1923,11 +1935,7 @@ void init(void)
 	blocks[6][0] = (block){.name = "Sand", .type = solid, .textures = {6, 6, 6, 6, 6, 6}, .averageColor = calcColor(6)};
 	blocks[7][0] = (block){.name = "Sand", .type = solid, .textures = {11, 11, 10, 10, 10, 10}, .averageColor = calcColor(11)};
 	
-	cameraChunk[0] = (int)floor(cameraPos[0] / 16);
-	cameraChunk[1] = (int)floor(cameraPos[2] / 16);
-	cameraChunkPos[0] = cameraPos[0] - cameraChunk[0] * 16;
-	cameraChunkPos[1] = cameraPos[1];
-	cameraChunkPos[2] = cameraPos[2] - cameraChunk[1] * 16;
+	calcPos();
 	glm_ivec2_copy(cameraChunk, lastChunk);
 
 	generateManyChunks(&overworld, cameraChunk[0], cameraChunk[1], &chunks, &chunkCount, &chunkLimit);
@@ -1937,18 +1945,24 @@ void init(void)
 	generateChunksMap(chunks, 0, chunkCount);
 	generateMiniMap(&overworld, cameraChunk[0], cameraChunk[1]);
 
+	for (int i = cameraChunk[0] - viewDistance; i <= cameraChunk[0] + viewDistance; i++)
+	{
+		for (int j = cameraChunk[1] - viewDistance; j <= cameraChunk[1] + viewDistance; j++)
+		{
+			int idx = getChunkIdx(&overworld, i, j);
+			addVBO(&chunks[idx]);
+			if (idx >= 0 && idx <= chunkCount)
+			{
+				chunksToView[chunksTVCount++] = idx;
+			} 
+		}
+	}
+
 	glEnable(GL_DEPTH_TEST);
 	glEnable(GL_CULL_FACE);
 	glCullFace(GL_BACK);
 	glEnable(GL_BLEND);
 	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-
-	for (int i = 0; i < chunkCount; i++)
-	{
-		chunkNode *c = &chunks[i];
-		addVBO(c);
-		chunksToView[chunksTVCount++] = c->index;
-	}
 
 	unsigned int vertexShader;
 	vertexShader = glCreateShader(GL_VERTEX_SHADER);
@@ -2385,11 +2399,10 @@ void render(void)
 
 		if (walked)
 		{
+			calcPos();
 			atualizeMovement();
+			calcMap();
 			calculateFrustum();
-			float posX = cameraChunkPos[2] / (minimapScale * screenWidth);
-			float posY = cameraChunkPos[0] / (minimapScale * screenWidth);
-			glUniform3f(uniformRealPos, posX, posY, 0);
 			walked = false;
 
 			chunkNode* c = &chunks[getChunkIdx(&overworld, cameraChunk[0], cameraChunk[1])];
