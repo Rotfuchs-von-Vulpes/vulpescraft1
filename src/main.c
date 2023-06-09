@@ -252,6 +252,7 @@ int textureCount = 0;
 int shaderCount = 0;
 unsigned int uniformView;
 unsigned int uniformProjection;
+unsigned int uniformModel;
 unsigned int uniformRealPos;
 unsigned int uniformOffset;
 unsigned int uniformMapScale;
@@ -505,13 +506,13 @@ float far = 1000.f;
 
 
 // 100000.f
-vec3 cameraPos = {10.f, 80.f, 8.f};
+vec3 cameraPos = {100000.f, 80.f, 8.f};
 vec3 cameraFront = {0.f, 0.f, -1.f};
 vec3 cameraUp = {0.f, 1.f, 0.f};
 vec3 cameraRight = {1.f, 0.f, 0.f};
 ivec2 lastChunk;
 ivec2 cameraChunk;
-vec2 cameraChunkPos;
+vec3 cameraChunkPos;
 float cameraDirection;
 float lastCameraDirection = 0;
 
@@ -541,8 +542,13 @@ void calculateFrustum(void)
 {
 	chunksIFCount = 0;
 
+	mat4 viewPos;
 	mat4 MPV;
-	glm_mat4_mul(projection, view, MPV);
+	glm_mat4_copy(view, viewPos);
+	vec3 center;
+	glm_vec3_add(cameraPos, cameraFront, center);
+	glm_lookat(cameraPos, center, cameraUp, viewPos);
+	glm_mat4_mul(projection, viewPos, MPV);
 
 	for (int i = 0; i < chunksTVCount; i++)
 	{
@@ -663,8 +669,6 @@ void scrollCallback(GLFWwindow* window, double xoffset, double yoffset)
 		glUniform2f(uniformWorldMapPos, mapTranslation[0], -mapTranslation[1]);
 	}
 }
-
-bool debugVar = false;
 
 void processInput(GLFWwindow *window)
 {
@@ -978,7 +982,6 @@ void generateVertices(chunkNode *chunkNodes, int init, int count)
 			meshCube *cube = &c->meshCubes[indicesBlocks[j]];
 			vec3 pos;
 			glm_vec3_copy(cube->position, pos);
-			glm_vec3_add(pos, (vec3){c->posX * 16, 0, c->posZ * 16}, pos);
 			block b = blocks[cube->ID[0]][cube->ID[1]];
 			int top = b.textures[0];
 			int side = b.textures[2];
@@ -1529,8 +1532,8 @@ void atualizeMovement(void)
 	cameraChunk[0] = (int)floor(cameraPos[0] / 16);
 	cameraChunk[1] = (int)floor(cameraPos[2] / 16);
 	cameraChunkPos[0] = cameraPos[0] - cameraChunk[0] * 16;
-	cameraChunkPos[1] = cameraPos[2] - cameraChunk[1] * 16;
-
+	cameraChunkPos[1] = cameraPos[1];
+	cameraChunkPos[2] = cameraPos[2] - cameraChunk[1] * 16;
 	if (lastChunk[0] != cameraChunk[0] || lastChunk[1] != cameraChunk[1])
 	{
 		int lastChunkCount = chunkCount;
@@ -1772,7 +1775,8 @@ void init(void)
 	cameraChunk[0] = (int)floor(cameraPos[0] / 16);
 	cameraChunk[1] = (int)floor(cameraPos[2] / 16);
 	cameraChunkPos[0] = cameraPos[0] - cameraChunk[0] * 16;
-	cameraChunkPos[1] = cameraPos[2] - cameraChunk[1] * 16;
+	cameraChunkPos[1] = cameraPos[1];
+	cameraChunkPos[2] = cameraPos[2] - cameraChunk[1] * 16;
 	glm_ivec2_copy(cameraChunk, lastChunk);
 
 	generateManyChunks(&overworld, cameraChunk[0], cameraChunk[1], &chunks, &chunkCount, &chunkLimit);
@@ -1850,11 +1854,12 @@ void init(void)
 
 	uniformView = glGetUniformLocation(shaderProgram[0], "view");
 	uniformProjection = glGetUniformLocation(shaderProgram[0], "projection");
+	uniformModel = glGetUniformLocation(shaderProgram[0], "model");
 
 	unsigned int uniformLoc = glGetUniformLocation(shaderProgram[0], "light.direction");
 	glUniform3f(uniformLoc, -0.2f, -1.0f, -0.3f);
 	uniformLoc = glGetUniformLocation(shaderProgram[0], "viewPos");
-	glUniform3f(uniformLoc, cameraPos[0], cameraPos[1], cameraPos[2]);
+	glUniform3f(uniformLoc, cameraChunkPos[0], cameraChunkPos[1], cameraChunkPos[2]);
 	uniformLoc = glGetUniformLocation(shaderProgram[0], "light.ambient");
 	glUniform3f(uniformLoc, 0.5f, 0.5f, 0.5f);
 	uniformLoc = glGetUniformLocation(shaderProgram[0], "light.diffuse");
@@ -1875,8 +1880,8 @@ void init(void)
 	glm_translate(view, (vec3){0.0f, 0.0f, -3.0f});
 	glm_perspective(glm_rad(fov), (float)screenWidth / (float)screenHeight, near, far, projection);
 	vec3 center;
-	glm_vec3_add(cameraPos, cameraFront, center);
-	glm_lookat(cameraPos, center, cameraUp, view);
+	glm_vec3_add(cameraChunkPos, cameraFront, center);
+	glm_lookat(cameraChunkPos, center, cameraUp, view);
 	calculateFrustum();
 
 	glBindBuffer(GL_ARRAY_BUFFER, 0);
@@ -1927,8 +1932,9 @@ void init(void)
 	glUniform1f(uniformCameraDirection, cameraDirection);
 	glUniform3f(uniformOffset, (screenWidth - 300.) / screenWidth, (screenHeight - 300.) / screenHeight, 0);
 	cameraChunkPos[0] = cameraPos[0] - cameraChunk[0] * 16;
-	cameraChunkPos[1] = cameraPos[2] - cameraChunk[1] * 16;
-	float posX = 2 * cameraChunkPos[1] / (minimapScale * screenWidth);
+	cameraChunkPos[1] = cameraPos[1];
+	cameraChunkPos[2] = cameraPos[2] - cameraChunk[1] * 16;
+	float posX = 2 * cameraChunkPos[2] / (minimapScale * screenWidth);
 	float posY = 2 * cameraChunkPos[0] / (minimapScale * screenWidth);
 	glUniform3f(uniformRealPos, posX, posY, 0);
 
@@ -2125,8 +2131,6 @@ void init(void)
 
 double currentTime;
 
-int num = 0;
-
 void render(void)
 {
 	currentTime = glfwGetTime();
@@ -2147,8 +2151,8 @@ void render(void)
 	else
 	{
 		vec3 center;
-		glm_vec3_add(cameraPos, cameraFront, center);
-		glm_lookat(cameraPos, center, cameraUp, view);
+		glm_vec3_add(cameraChunkPos, cameraFront, center);
+		glm_lookat(cameraChunkPos, center, cameraUp, view);
 
 		glBindFramebuffer(GL_FRAMEBUFFER, fbo);
 		glEnable(GL_DEPTH_TEST);
@@ -2163,10 +2167,17 @@ void render(void)
 		glActiveTexture(GL_TEXTURE0);
 		glBindTexture(GL_TEXTURE_2D_ARRAY, texture);
 
+		mat4 model = GLM_MAT4_IDENTITY_INIT;
+
 		for (int i = 0; i <= chunksIFCount; i++)
 		{
 			chunkNode *c = &chunks[chunksInFront[i]];
+			vec3 translate = {(c->posX - cameraChunk[0]) * 16, 0, (c->posZ - cameraChunk[1]) * 16};
+
 			glBindVertexArray(c->VAO);
+			glm_translate(model, translate);
+			glUniformMatrix4fv(uniformModel, 1, false, (float *)model);
+			glm_mat4_identity(model);
 			if (c->waterIndex >= 0)
 			{
 				glDrawElements(GL_TRIANGLES, c->waterIndex, GL_UNSIGNED_INT, 0);
@@ -2181,7 +2192,12 @@ void render(void)
 		for (int i = 0; i <= chunksIFCount; i++)
 		{
 			chunkNode *c = &chunks[chunksInFront[i]];
+			vec3 translate = {(c->posX - cameraChunk[0]) * 16, 0, (c->posZ - cameraChunk[1]) * 16};
+
 			glBindVertexArray(c->VAO);
+			glm_translate(model, translate);
+			glUniformMatrix4fv(uniformModel, 1, false, (float *)model);
+			glm_mat4_identity(model);
 			if (c->waterIndex >= 0)
 			{
 				glDrawElements(GL_TRIANGLES, (c->indicesBufferCount - c->waterIndex) + 1, GL_UNSIGNED_INT, (GLvoid*) (sizeof(int)*c->waterIndex));
@@ -2207,7 +2223,7 @@ void render(void)
 		glUniformMatrix4fv(uniformView2, 1, false, (float *)view);
 		glUniformMatrix4fv(uniformInvView, 1, false, (float *)invView);
 		glUniformMatrix4fv(uniformPers, 1, false, (float *)projection);
-		glUniform3f(uniformViewPos, cameraPos[0], cameraPos[1], cameraPos[2]);
+		glUniform3f(uniformViewPos, cameraChunkPos[0], cameraChunkPos[1], cameraChunkPos[2]);
 
 		glUseProgram(shaderProgram[1]);
 		// glClear(GL_DEPTH_BUFFER_BIT);
@@ -2223,7 +2239,7 @@ void render(void)
 		{
 			atualizeMovement();
 			calculateFrustum();
-			float posX = cameraChunkPos[1] / (minimapScale * screenWidth);
+			float posX = cameraChunkPos[2] / (minimapScale * screenWidth);
 			float posY = cameraChunkPos[0] / (minimapScale * screenWidth);
 			glUniform3f(uniformRealPos, posX, posY, 0);
 			walked = false;
@@ -2231,8 +2247,8 @@ void render(void)
 			chunkNode* c = &chunks[getChunkIdx(&overworld, cameraChunk[0], cameraChunk[1])];
 
 			int x = floor(cameraChunkPos[0] + .5);
-			int y = floor(cameraPos[1] + .5);
-			int z = floor(cameraChunkPos[1] + .5);
+			int y = floor(cameraChunkPos[1] + .5);
+			int z = floor(cameraChunkPos[2] + .5);
 
 			if (x > 15)
 			{
