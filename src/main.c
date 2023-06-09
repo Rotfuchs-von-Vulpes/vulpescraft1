@@ -283,6 +283,8 @@ int screenWidth = SCREEN_WIDTH_INIT;
 int screenHeight = SCREEN_HEIGHT_INIT;
 
 typedef double vec3d[3];
+typedef CGLM_ALIGN_IF(16) double vec4d[4];
+typedef CGLM_ALIGN_MAT vec4d mat4d[4];
 
 #define vec3_to_vec3d(v) \
 (vec3d){ v[0], v[1], v[2] }
@@ -361,7 +363,7 @@ void vec3d_crossn(vec3d a, vec3d b, vec3d dest) {
 }
 
 CGLM_INLINE
-void lookat(vec3d eye, vec3d center, vec3 up, mat4 dest) {
+void lookat(vec3d eye, vec3d center, vec3 up, mat4d dest) {
   CGLM_ALIGN(8) vec3d f, u, s;
 
   vec3d_sub(center, eye, f);
@@ -384,6 +386,50 @@ void lookat(vec3d eye, vec3d center, vec3 up, mat4 dest) {
   dest[3][2] = vec3d_dot(f, eye);
   dest[0][3] = dest[1][3] = dest[2][3] = 0.0f;
   dest[3][3] = 1.0f;
+}
+
+CGLM_INLINE
+void mat4d_mul(mat4 m1, mat4d m2, mat4d dest)
+{
+	double a00 = m1[0][0], a01 = m1[0][1], a02 = m1[0][2], a03 = m1[0][3],
+        a10 = m1[1][0], a11 = m1[1][1], a12 = m1[1][2], a13 = m1[1][3],
+        a20 = m1[2][0], a21 = m1[2][1], a22 = m1[2][2], a23 = m1[2][3],
+        a30 = m1[3][0], a31 = m1[3][1], a32 = m1[3][2], a33 = m1[3][3],
+
+        b00 = m2[0][0], b01 = m2[0][1], b02 = m2[0][2], b03 = m2[0][3],
+        b10 = m2[1][0], b11 = m2[1][1], b12 = m2[1][2], b13 = m2[1][3],
+        b20 = m2[2][0], b21 = m2[2][1], b22 = m2[2][2], b23 = m2[2][3],
+        b30 = m2[3][0], b31 = m2[3][1], b32 = m2[3][2], b33 = m2[3][3];
+
+  dest[0][0] = a00 * b00 + a10 * b01 + a20 * b02 + a30 * b03;
+  dest[0][1] = a01 * b00 + a11 * b01 + a21 * b02 + a31 * b03;
+  dest[0][2] = a02 * b00 + a12 * b01 + a22 * b02 + a32 * b03;
+  dest[0][3] = a03 * b00 + a13 * b01 + a23 * b02 + a33 * b03;
+  dest[1][0] = a00 * b10 + a10 * b11 + a20 * b12 + a30 * b13;
+  dest[1][1] = a01 * b10 + a11 * b11 + a21 * b12 + a31 * b13;
+  dest[1][2] = a02 * b10 + a12 * b11 + a22 * b12 + a32 * b13;
+  dest[1][3] = a03 * b10 + a13 * b11 + a23 * b12 + a33 * b13;
+  dest[2][0] = a00 * b20 + a10 * b21 + a20 * b22 + a30 * b23;
+  dest[2][1] = a01 * b20 + a11 * b21 + a21 * b22 + a31 * b23;
+  dest[2][2] = a02 * b20 + a12 * b21 + a22 * b22 + a32 * b23;
+  dest[2][3] = a03 * b20 + a13 * b21 + a23 * b22 + a33 * b23;
+  dest[3][0] = a00 * b30 + a10 * b31 + a20 * b32 + a30 * b33;
+  dest[3][1] = a01 * b30 + a11 * b31 + a21 * b32 + a31 * b33;
+  dest[3][2] = a02 * b30 + a12 * b31 + a22 * b32 + a32 * b33;
+  dest[3][3] = a03 * b30 + a13 * b31 + a23 * b32 + a33 * b33;
+}
+
+CGLM_INLINE
+void mat4d_copy(mat4 mat, mat4d dest) {
+  dest[0][0] = mat[0][0];  dest[1][0] = mat[1][0];
+  dest[0][1] = mat[0][1];  dest[1][1] = mat[1][1];
+  dest[0][2] = mat[0][2];  dest[1][2] = mat[1][2];
+  dest[0][3] = mat[0][3];  dest[1][3] = mat[1][3];
+
+  dest[2][0] = mat[2][0];  dest[3][0] = mat[3][0];
+  dest[2][1] = mat[2][1];  dest[3][1] = mat[3][1];
+  dest[2][2] = mat[2][2];  dest[3][2] = mat[3][2];
+  dest[2][3] = mat[2][3];  dest[3][3] = mat[3][3];
 }
 
 void loadShader(unsigned int vertexShader, unsigned int fragmentShader)
@@ -584,14 +630,14 @@ typedef struct block {
 
 block blocks[1024][1024];
 
-bool testAab(mat4 MPV, vec3 min, vec3 max)
+bool testAab(mat4d MPV, vec3 min, vec3 max)
 {
-	float nxX = MPV[0][3] + MPV[0][0], nxY = MPV[1][3] + MPV[1][0], nxZ = MPV[2][3] + MPV[2][0], nxW = MPV[3][3] + MPV[3][0];
-	float pxX = MPV[0][3] - MPV[0][0], pxY = MPV[1][3] - MPV[1][0], pxZ = MPV[2][3] - MPV[2][0], pxW = MPV[3][3] - MPV[3][0];
-	float nyX = MPV[0][3] + MPV[0][1], nyY = MPV[1][3] + MPV[1][1], nyZ = MPV[2][3] + MPV[2][1], nyW = MPV[3][3] + MPV[3][1];
-	float pyX = MPV[0][3] - MPV[0][1], pyY = MPV[1][3] - MPV[1][1], pyZ = MPV[2][3] - MPV[2][1], pyW = MPV[3][3] - MPV[3][1];
-	float nzX = MPV[0][3] + MPV[0][2], nzY = MPV[1][3] + MPV[1][2], nzZ = MPV[2][3] + MPV[2][2], nzW = MPV[3][3] + MPV[3][2];
-	float pzX = MPV[0][3] - MPV[0][2], pzY = MPV[1][3] - MPV[1][2], pzZ = MPV[2][3] - MPV[2][2], pzW = MPV[3][3] - MPV[3][2];
+	double nxX = MPV[0][3] + MPV[0][0], nxY = MPV[1][3] + MPV[1][0], nxZ = MPV[2][3] + MPV[2][0], nxW = MPV[3][3] + MPV[3][0];
+	double pxX = MPV[0][3] - MPV[0][0], pxY = MPV[1][3] - MPV[1][0], pxZ = MPV[2][3] - MPV[2][0], pxW = MPV[3][3] - MPV[3][0];
+	double nyX = MPV[0][3] + MPV[0][1], nyY = MPV[1][3] + MPV[1][1], nyZ = MPV[2][3] + MPV[2][1], nyW = MPV[3][3] + MPV[3][1];
+	double pyX = MPV[0][3] - MPV[0][1], pyY = MPV[1][3] - MPV[1][1], pyZ = MPV[2][3] - MPV[2][1], pyW = MPV[3][3] - MPV[3][1];
+	double nzX = MPV[0][3] + MPV[0][2], nzY = MPV[1][3] + MPV[1][2], nzZ = MPV[2][3] + MPV[2][2], nzW = MPV[3][3] + MPV[3][2];
+	double pzX = MPV[0][3] - MPV[0][2], pzY = MPV[1][3] - MPV[1][2], pzZ = MPV[2][3] - MPV[2][2], pzW = MPV[3][3] - MPV[3][2];
 	
 	return nxX * (nxX < 0 ? min[0] : max[0]) + nxY * (nxY < 0 ? min[1] : max[1]) + nxZ * (nxZ < 0 ? min[2] : max[2]) >= -nxW &&
 		pxX * (pxX < 0 ? min[0] : max[0]) + pxY * (pxY < 0 ? min[1] : max[1]) + pxZ * (pxZ < 0 ? min[2] : max[2]) >= -pxW &&
@@ -610,7 +656,7 @@ float far = 1000.f;
 
 
 // 100000.f
-vec3d cameraPos = {100000.f, 80.f, 8.f};
+vec3d cameraPos = {8.f, 80.f, 8.f};
 vec3 cameraFront = {0.f, 0.f, -1.f};
 vec3 cameraUp = {0.f, 1.f, 0.f};
 vec3 cameraRight = {1.f, 0.f, 0.f};
@@ -646,14 +692,14 @@ void calculateFrustum(void)
 {
 	chunksIFCount = 0;
 
-	mat4 viewPos;
-	mat4 MPV;
-	glm_mat4_copy(view, viewPos);
+	mat4d viewPos;
+	mat4d MPV;
+	mat4d_copy(view, viewPos);
 	vec3d center;
 	vec3d front;
 	vec3d_add(cameraPos, vec3_to_vec3d(cameraFront), center);
 	lookat(cameraPos, center, cameraUp, viewPos);
-	glm_mat4_mul(projection, viewPos, MPV);
+	mat4d_mul(projection, viewPos, MPV);
 
 	for (int i = 0; i < chunksTVCount; i++)
 	{
@@ -1269,9 +1315,9 @@ float noise(vec2 st)
 
 float fbm(vec2 st) {
 	// Initial values
-	float value = 0;
-	float amplitude = .5;
-	float frequency = 0;
+	double value = 0;
+	double amplitude = .5;
+	double frequency = 0;
 	
 	for (int i = 0; i < 6; i++) {
 		vec2 input;
@@ -1889,7 +1935,7 @@ void init(void)
 	generateMesh(chunks, 0, chunkCount);
 	generateVertices(chunks, 0, chunkCount);
 	generateChunksMap(chunks, 0, chunkCount);
-	generateMiniMap(&overworld, 0, 0);
+	generateMiniMap(&overworld, cameraChunk[0], cameraChunk[1]);
 
 	glEnable(GL_DEPTH_TEST);
 	glEnable(GL_CULL_FACE);
@@ -2036,11 +2082,8 @@ void init(void)
 	cameraDirection = atan2(cameraFront[2], cameraFront[0]);
 	glUniform1f(uniformCameraDirection, cameraDirection);
 	glUniform3f(uniformOffset, (screenWidth - 300.) / screenWidth, (screenHeight - 300.) / screenHeight, 0);
-	cameraChunkPos[0] = cameraPos[0] - cameraChunk[0] * 16;
-	cameraChunkPos[1] = cameraPos[1];
-	cameraChunkPos[2] = cameraPos[2] - cameraChunk[1] * 16;
-	float posX = 2 * cameraChunkPos[2] / (minimapScale * screenWidth);
-	float posY = 2 * cameraChunkPos[0] / (minimapScale * screenWidth);
+	float posX = cameraChunkPos[2] / (minimapScale * screenWidth);
+	float posY = cameraChunkPos[0] / (minimapScale * screenWidth);
 	glUniform3f(uniformRealPos, posX, posY, 0);
 
 	glGenVertexArrays(1, &mapVAO);
