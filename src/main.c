@@ -464,6 +464,8 @@ hashFunction(int8_t const *cstr, int len)
 	return result;
 }
 
+#define WORLD_RADIUS 10000
+
 #define EXP 27
 // Initialize all slots to an "empty" value (null)
 #define HT_INIT \
@@ -485,6 +487,17 @@ int32_t ht_lookup(uint64_t hash, int exp, int32_t idx)
 	return (idx + step) & mask;
 }
 
+#define GET_POS(a, b) \
+a = a - 2 * WORLD_RADIUS * (int)(floor((float)(a - WORLD_RADIUS) / (2. * WORLD_RADIUS)) + 1); \
+b = b - 2 * WORLD_RADIUS * (int)(floor((float)(b - WORLD_RADIUS) / (2. * WORLD_RADIUS)) + 1);
+
+CGLM_INLINE
+void getPos(int *x, int *z)
+{
+	
+	printf("(%i, %i)\n", *x, *z);
+}
+
 CGLM_INLINE
 int32_t getHash(int posX, int posZ)
 {
@@ -492,8 +505,10 @@ int32_t getHash(int posX, int posZ)
 	return hashFunction((int8_t *)&pos, sizeof(int64_t));
 }
 
-void addChunk(ht *t, const int posX, const int posZ, int index)
+void addChunk(ht *t, int posX, int posZ, int index)
 {
+	GET_POS(posX, posZ)
+	// printf("(%i, %i)\n", posX, posZ);
 	int32_t h = getHash(posX, posZ);
 	int32_t i = h;
 	while (true)
@@ -517,8 +532,9 @@ void addChunk(ht *t, const int posX, const int posZ, int index)
 	}
 }
 
-int hasChunk(ht *t, const int posX, const int posZ)
+int hasChunk(ht *t, int posX, int posZ)
 {
+	GET_POS(posX, posZ)
 	int32_t h = getHash(posX, posZ);
 	int32_t i = h;
 	while (true)
@@ -535,8 +551,9 @@ int hasChunk(ht *t, const int posX, const int posZ)
 	}
 }
 
-int getChunkIdx(ht *t, const int posX, const int posZ)
+int getChunkIdx(ht *t, int posX, int posZ)
 {
+	GET_POS(posX, posZ)
 	int32_t h = getHash(posX, posZ);
 	int32_t i = h;
 	while (true)
@@ -601,8 +618,15 @@ int chunkLimit = 1024;
 chunkNode *chunks = NULL;
 int chunksTVCount = 0;
 int chunksIFCount = 0;
-int chunksToView[1024];
-int chunksInFront[1024];
+
+typedef struct toView {
+	int x;
+	int z;
+	int id;
+} toView;
+
+toView chunksToView[1024];
+toView chunksInFront[1024];
 
 typedef enum renderType {solid, transparent, empty, opaque} renderType;
 
@@ -692,24 +716,25 @@ void calculateFrustum(void)
 {
 	chunksIFCount = 0;
 
-	mat4d viewPos;
+	mat4d viewD;
 	mat4d MPV;
-	mat4d_copy(view, viewPos);
-	vec3d center;
-	vec3d front;
-	vec3d_add(cameraPos, vec3_to_vec3d(cameraFront), center);
-	lookat(cameraPos, center, cameraUp, viewPos);
-	mat4d_mul(projection, viewPos, MPV);
+	mat4d_copy(view, viewD);
+	mat4d_mul(projection, viewD, MPV);
 
 	for (int i = 0; i < chunksTVCount; i++)
 	{
-		chunkNode* c = &chunks[chunksToView[i]];
+		int x = chunksToView[i].x;
+		int z = chunksToView[i].z;
 
-		vec3 min = {c->posX * 16, 0, c->posZ * 16};
-		vec3 max = {c->posX * 16 + 16, 256, c->posZ * 16 + 16};
+		vec3 min = {x * 16, 0, z * 16};
+		vec3 max = {x * 16 + 16, 256, z * 16 + 16};
 
 		if (testAab(MPV, min, max))
+		{
+			chunksInFront[chunksIFCount].x = x;
+			chunksInFront[chunksIFCount].z = z;
 			chunksInFront[chunksIFCount++] = chunksToView[i];
+		}
 	}
 }
 
@@ -1529,10 +1554,10 @@ void generateMiniMap(ht *dimension, int posX, int posZ)
 		for (int j = 0; j < 16; j++)
 		{
 			bool chunkGenerated = hasChunk(dimension, posX + i - 8, posZ + j - 8);
-			chunkNode c;
+			chunkNode *c;
 			if (chunkGenerated)
 			{
-				c = chunks[getChunkIdx(dimension, posX + i - 8, posZ + j - 8)]; 
+				c = &chunks[getChunkIdx(dimension, posX + i - 8, posZ + j - 8)]; 
 			}
 			for (int x = 0; x < 16; x++)
 			{
@@ -1540,9 +1565,9 @@ void generateMiniMap(ht *dimension, int posX, int posZ)
 				{
 					if (chunkGenerated)
 					{
-						megaTexture[((i * 16 + x) * 256 + j * 16 + z) * 3] = c.heightMap[(x * 16 + z) * 3];
-						megaTexture[((i * 16 + x) * 256 + j * 16 + z) * 3 + 1] = c.heightMap[(x * 16 + z) * 3 + 1];
-						megaTexture[((i * 16 + x) * 256 + j * 16 + z) * 3 + 2] = c.heightMap[(x * 16 + z) * 3 + 2];
+						megaTexture[((i * 16 + x) * 256 + j * 16 + z) * 3] = c->heightMap[(x * 16 + z) * 3];
+						megaTexture[((i * 16 + x) * 256 + j * 16 + z) * 3 + 1] = c->heightMap[(x * 16 + z) * 3 + 1];
+						megaTexture[((i * 16 + x) * 256 + j * 16 + z) * 3 + 2] = c->heightMap[(x * 16 + z) * 3 + 2];
 					}
 					if (x == 0 || z == 0)
 					{
@@ -1689,7 +1714,7 @@ void calcPos(void)
 
 void calcMap(void)
 {
-	glUseProgram(shaderProgram[2]);
+	glUseProgram(shaderProgram[1]);
 	float posX = cameraChunkPos[2] / (minimapScale * screenWidth);
 	float posY = cameraChunkPos[0] / (minimapScale * screenWidth);
 	glUniform3f(uniformRealPos, posX, posY, 0);
@@ -1697,6 +1722,10 @@ void calcMap(void)
 
 void atualizeMovement(void)
 {
+	int dist = WORLD_RADIUS * 16;
+	cameraPos[0] = cameraPos[0] - 2 * dist * (floor((cameraPos[0] - dist) / (2 * dist)) + 1);
+	cameraPos[2] = cameraPos[2] - 2 * dist * (floor((cameraPos[2] - dist) / (2 * dist)) + 1);
+
 	if (lastChunk[0] != cameraChunk[0] || lastChunk[1] != cameraChunk[1])
 	{
 		int lastChunkCount = chunkCount;
@@ -1770,7 +1799,9 @@ void atualizeMovement(void)
 				int idx = getChunkIdx(&overworld, i, j);
 				if (idx >= 0 && idx <= chunkCount)
 				{
-					chunksToView[chunksTVCount++] = idx;
+					chunksToView[chunksTVCount].x = i - cameraChunk[0];
+					chunksToView[chunksTVCount].z = j - cameraChunk[1];
+					chunksToView[chunksTVCount++].id = idx;
 				} 
 			}
 		}
@@ -1953,7 +1984,9 @@ void init(void)
 			addVBO(&chunks[idx]);
 			if (idx >= 0 && idx <= chunkCount)
 			{
-				chunksToView[chunksTVCount++] = idx;
+				chunksToView[chunksTVCount].x = i;
+				chunksToView[chunksTVCount].z = j;
+				chunksToView[chunksTVCount++].id = idx;
 			} 
 		}
 	}
@@ -2333,8 +2366,10 @@ void render(void)
 
 		for (int i = 0; i <= chunksIFCount; i++)
 		{
-			chunkNode *c = &chunks[chunksInFront[i]];
-			vec3 translate = {(c->posX - cameraChunk[0]) * 16, 0, (c->posZ - cameraChunk[1]) * 16};
+			chunkNode *c = &chunks[chunksInFront[i].id];
+			int x = chunksInFront[i].x;
+			int z = chunksInFront[i].z;
+			vec3 translate = {x * 16, 0, z * 16};
 
 			glBindVertexArray(c->VAO);
 			glm_translate(model, translate);
@@ -2353,8 +2388,10 @@ void render(void)
 
 		for (int i = 0; i <= chunksIFCount; i++)
 		{
-			chunkNode *c = &chunks[chunksInFront[i]];
-			vec3 translate = {(c->posX - cameraChunk[0]) * 16, 0, (c->posZ - cameraChunk[1]) * 16};
+			chunkNode *c = &chunks[chunksInFront[i].id];
+			int x = chunksInFront[i].x;
+			int z = chunksInFront[i].z;
+			vec3 translate = {x * 16, 0, z * 16};
 
 			glBindVertexArray(c->VAO);
 			glm_translate(model, translate);
