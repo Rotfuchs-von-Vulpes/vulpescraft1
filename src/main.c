@@ -491,13 +491,6 @@ a = a - 2 * WORLD_RADIUS * (int)(floor((float)(a - WORLD_RADIUS) / (2. * WORLD_R
 b = b - 2 * WORLD_RADIUS * (int)(floor((float)(b - WORLD_RADIUS) / (2. * WORLD_RADIUS)) + 1);
 
 CGLM_INLINE
-void getPos(int *x, int *z)
-{
-	
-	printf("(%i, %i)\n", *x, *z);
-}
-
-CGLM_INLINE
 int32_t getHash(int posX, int posZ)
 {
 	int64_t pos = (posX & 0xFFFFFFFFll) | ((uint64_t)(posZ) << 32);
@@ -717,7 +710,9 @@ void calculateFrustum(void)
 
 	mat4d viewD;
 	mat4d MPV;
-	mat4d_copy(view, viewD);
+	vec3d center;
+	vec3d_add(vec3_to_vec3d(cameraChunkPos), vec3_to_vec3d(cameraFront), center);
+	lookat(vec3_to_vec3d(cameraChunkPos), center, cameraUp, viewD);
 	mat4d_mul(projection, viewD, MPV);
 
 	for (int i = 0; i < chunksTVCount; i++)
