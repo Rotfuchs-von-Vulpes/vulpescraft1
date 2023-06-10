@@ -131,7 +131,6 @@ const char *fragmentShaderSrc =
 		"  float pct = smoothstep(-.5,.5,worldSpace.y / 100. - 3.);\n"
 		"  FragColor = mix(fog_colour, sky_colour, pct);\n"
 		"  vec3 look = vec3(viewMatrix[0][2], viewMatrix[1][2], viewMatrix[2][2]);\n"
-		"  if (length(look - sun) < 1.) FragColor = vec4(1.);\n"
 		" }\n"
 		" else \n"
 		" {\n"
