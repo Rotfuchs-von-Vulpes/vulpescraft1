@@ -1160,7 +1160,7 @@ void generateVertices(chunkNode *chunkNodes, int init, int count)
 			if (j == waterIndex)
 			{
 				c->waterIndex = c->indicesBufferCount;
-				offset = 2.f / 14;
+				offset = 2.f / 16;
 			} 
 
 			if (cube->faces[0])
