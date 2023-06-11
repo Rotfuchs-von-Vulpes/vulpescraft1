@@ -1,3 +1,4 @@
+#include <stdint.h>
 #include <stdio.h>
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
@@ -462,8 +463,8 @@ hashFunction(int8_t const *cstr, int len)
 
 	return result;
 }
-
-#define WORLD_RADIUS 10000
+// limit = 1073741823
+#define WORLD_RADIUS 1411587
 
 #define EXP 27
 // Initialize all slots to an "empty" value (null)
@@ -487,8 +488,8 @@ int32_t ht_lookup(uint64_t hash, int exp, int32_t idx)
 }
 
 #define GET_POS(a, b) \
-a = a - 2 * WORLD_RADIUS * (int)(floor((float)(a - WORLD_RADIUS) / (2. * WORLD_RADIUS)) + 1); \
-b = b - 2 * WORLD_RADIUS * (int)(floor((float)(b - WORLD_RADIUS) / (2. * WORLD_RADIUS)) + 1);
+a = a - 2 * WORLD_RADIUS * (int64_t)(floor((double)(a + WORLD_RADIUS) / (2. * WORLD_RADIUS))); \
+b = b - 2 * WORLD_RADIUS * (int64_t)(floor((double)(b + WORLD_RADIUS) / (2. * WORLD_RADIUS)));
 
 CGLM_INLINE
 int32_t getHash(int posX, int posZ)
@@ -497,7 +498,7 @@ int32_t getHash(int posX, int posZ)
 	return hashFunction((int8_t *)&pos, sizeof(int64_t));
 }
 
-void addChunk(ht *t, int posX, int posZ, int index)
+void addChunk(ht *t, int64_t posX, int64_t posZ, int index)
 {
 	GET_POS(posX, posZ)
 	// printf("(%i, %i)\n", posX, posZ);
@@ -524,7 +525,7 @@ void addChunk(ht *t, int posX, int posZ, int index)
 	}
 }
 
-int hasChunk(ht *t, int posX, int posZ)
+int hasChunk(ht *t, int64_t posX, int64_t posZ)
 {
 	GET_POS(posX, posZ)
 	int32_t h = getHash(posX, posZ);
@@ -543,7 +544,7 @@ int hasChunk(ht *t, int posX, int posZ)
 	}
 }
 
-int getChunkIdx(ht *t, int posX, int posZ)
+int getChunkIdx(ht *t, int64_t posX, int64_t posZ)
 {
 	GET_POS(posX, posZ)
 	int32_t h = getHash(posX, posZ);
@@ -672,13 +673,13 @@ float far = 1000.f;
 
 
 // 100000.f
-vec3d cameraPos = {8.f, 80.f, 8.f};
+// vec3d cameraPos = {220., 80., 8.};
 vec3 cameraFront = {0.f, 0.f, -1.f};
 vec3 cameraUp = {0.f, 1.f, 0.f};
 vec3 cameraRight = {1.f, 0.f, 0.f};
 ivec2 lastChunk;
-ivec2 cameraChunk;
-vec3 cameraChunkPos;
+ivec2 cameraChunk = {0, 0};
+vec3 cameraChunkPos = {8, 80, 8};
 float cameraDirection;
 float lastCameraDirection = 0;
 
@@ -703,6 +704,16 @@ float minimapScale = 250. / SCREEN_WIDTH_INIT;
 bool mapView = false;
 float mapScale = 50. / SCREEN_WIDTH_INIT;
 bool firstKeyJ = true;
+
+float fractOverMiddle(double x, double total)
+{
+	return x - 2 * total * floor((x + total) / (2 * total));
+}
+
+float fractOverEnd(double x, double total)
+{
+	return x - 2 * total * floor(x / (2 * total));
+}
 
 void calculateFrustum(void)
 {
@@ -913,13 +924,13 @@ void processInput(GLFWwindow *window)
 	if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
 	{
 		glm_vec3_scale(cameraFront, cameraSpeed, scale);
-		vec3d_add(cameraPos, vec3_to_vec3d(scale), cameraPos);
+		glm_vec3_add(cameraChunkPos, scale, cameraChunkPos);
 		walked = true;
 	}
 	if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
 	{
 		glm_vec3_scale(cameraFront, -cameraSpeed, scale);
-		vec3d_add(cameraPos, vec3_to_vec3d(scale), cameraPos);
+		glm_vec3_add(cameraChunkPos, scale, cameraChunkPos);
 		walked = true;
 	}
 	if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
@@ -927,7 +938,7 @@ void processInput(GLFWwindow *window)
 		glm_cross(cameraFront, cameraUp, cross);
 		glm_normalize(cross);
 		glm_vec3_scale(cross, -cameraSpeed, scale);
-		vec3d_add(cameraPos, vec3_to_vec3d(scale), cameraPos);
+		glm_vec3_add(cameraChunkPos, scale, cameraChunkPos);
 		walked = true;
 	}
 	if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
@@ -935,7 +946,7 @@ void processInput(GLFWwindow *window)
 		glm_cross(cameraFront, cameraUp, cross);
 		glm_normalize(cross);
 		glm_vec3_scale(cross, cameraSpeed, scale);
-		vec3d_add(cameraPos, vec3_to_vec3d(scale), cameraPos);
+		glm_vec3_add(cameraChunkPos, scale, cameraChunkPos);
 		walked = true;
 	}
 }
@@ -1538,8 +1549,8 @@ unsigned int megaMapTexture;
 
 void generateMiniMap(ht *dimension, int posX, int posZ)
 {
-	int metaX = (int)floor((float)posX / 16);
-	int metaY = (int)floor((float)posZ / 16);
+	int metaX = (int)floor((double)posX / 16);
+	int metaY = (int)floor((double)posZ / 16);
 	float *megaTexture;
 	megaTexture = (float *)malloc(256 * 256 * 3 * sizeof(float));
 
@@ -1620,8 +1631,10 @@ void generateChunkSides(ht *dimension, chunkNode *chunkNodes, int init, int coun
 	}
 }
 
-void generateChunkNode(ht *dimension, const int posX, const int posZ, chunkNode **chunkNodes, int *count, int *chunkLimit)
+void generateChunkNode(ht *dimension, int posX, int posZ, chunkNode **chunkNodes, int *count, int *chunkLimit)
 {
+	GET_POS(posX, posZ);
+
 	if (hasChunk(dimension, posX, posZ))
 		return;
 
@@ -1699,11 +1712,27 @@ void generateManyChunks(ht *dimension, int posX, int posZ, chunkNode **chunkNode
 
 void calcPos(void)
 {
-	cameraChunk[0] = (int)floor(cameraPos[0] / 16);
-	cameraChunk[1] = (int)floor(cameraPos[2] / 16);
-	cameraChunkPos[0] = cameraPos[0] - cameraChunk[0] * 16;
-	cameraChunkPos[1] = cameraPos[1];
-	cameraChunkPos[2] = cameraPos[2] - cameraChunk[1] * 16;
+	if (cameraChunkPos[0] > 16 || cameraChunkPos[0] < 0) {
+		int dx = floor((cameraChunkPos[0]) / 16);
+		cameraChunk[0] += dx;
+		cameraChunkPos[0] -= 16 * dx;
+	}
+
+	if (cameraChunkPos[2] > 16 || cameraChunkPos[2] < 0) {
+		int dx = floor((cameraChunkPos[2]) / 16);
+		cameraChunk[1] += dx;
+		cameraChunkPos[2] -= 16 * dx;
+	}
+
+	if (
+		cameraChunk[0] > WORLD_RADIUS || cameraChunk[0] < -WORLD_RADIUS ||
+		cameraChunk[1] > WORLD_RADIUS || cameraChunk[1] < -WORLD_RADIUS
+	)
+	{
+		GET_POS(cameraChunk[0], cameraChunk[1])
+	}
+
+	// printf("%i, %i\n", cameraChunk[0], cameraChunk[1]);
 }
 
 void calcMap(void)
@@ -1716,10 +1745,6 @@ void calcMap(void)
 
 void atualizeMovement(void)
 {
-	int dist = WORLD_RADIUS * 16;
-	cameraPos[0] = cameraPos[0] - 2 * dist * (floor((cameraPos[0] - dist) / (2 * dist)) + 1);
-	cameraPos[2] = cameraPos[2] - 2 * dist * (floor((cameraPos[2] - dist) / (2 * dist)) + 1);
-
 	if (lastChunk[0] != cameraChunk[0] || lastChunk[1] != cameraChunk[1])
 	{
 		int lastChunkCount = chunkCount;
@@ -1738,8 +1763,8 @@ void atualizeMovement(void)
 		if (dx != 0)
 		{
 			int signX = dx > 0 ? 1 : -1;
-
 			int posX = cameraChunk[0] + signX * viewDistance - 2 * signX;
+			
 			for (int i = cameraChunk[1] - viewDistance; i <= cameraChunk[1] + viewDistance; i++)
 			{
 				int index = getChunkIdx(&overworld, posX, i);
@@ -1758,7 +1783,7 @@ void atualizeMovement(void)
 		{
 			int signY = dy > 0 ? 1 : -1;
 			int posZ = cameraChunk[1] + signY * viewDistance - 2 * signY;
-
+			
 			for (int i = cameraChunk[0] - viewDistance; i <= cameraChunk[0] + viewDistance; i++)
 			{
 				int index = getChunkIdx(&overworld, i, posZ);
@@ -1800,8 +1825,7 @@ void atualizeMovement(void)
 			}
 		}
 
-		lastChunk[0] = cameraChunk[0];
-		lastChunk[1] = cameraChunk[1];
+		glm_ivec2_copy(cameraChunk, lastChunk);
 	}
 }
 
@@ -1958,9 +1982,9 @@ void init(void)
 	blocks[4][0] = (block){.name = "Glass", .type = transparent, .textures = {8, 8, 8, 8, 8, 8}, .averageColor = calcColor(8)};
 	blocks[5][0] = (block){.name = "Water source", .type = transparent, .textures = {9, 9, 9, 9, 9, 9}, .averageColor = calcColor(9)};
 	blocks[6][0] = (block){.name = "Sand", .type = solid, .textures = {6, 6, 6, 6, 6, 6}, .averageColor = calcColor(6)};
-	blocks[7][0] = (block){.name = "Sand", .type = solid, .textures = {11, 11, 10, 10, 10, 10}, .averageColor = calcColor(11)};
+	blocks[7][0] = (block){.name = "Oak Log", .type = solid, .textures = {11, 11, 10, 10, 10, 10}, .averageColor = calcColor(11)};
 	
-	calcPos();
+	// calcPos();
 	glm_ivec2_copy(cameraChunk, lastChunk);
 
 	generateManyChunks(&overworld, cameraChunk[0], cameraChunk[1], &chunks, &chunkCount, &chunkLimit);
@@ -1975,18 +1999,19 @@ void init(void)
 		for (int j = cameraChunk[1] - viewDistance; j <= cameraChunk[1] + viewDistance; j++)
 		{
 			int idx = getChunkIdx(&overworld, i, j);
-			addVBO(&chunks[idx]);
-			if (idx >= 0 && idx <= chunkCount)
+			if (idx == -1) puts("OPA");
+			if (idx >= 0 && idx < chunkCount)
 			{
-				chunksToView[chunksTVCount].x = i;
-				chunksToView[chunksTVCount].z = j;
+				addVBO(&chunks[idx]);
+				chunksToView[chunksTVCount].x = i - cameraChunk[0];
+				chunksToView[chunksTVCount].z = j - cameraChunk[1];
 				chunksToView[chunksTVCount++].id = idx;
 			} 
 		}
 	}
 
 	glEnable(GL_DEPTH_TEST);
-	glEnable(GL_CULL_FACE);
+	// glEnable(GL_CULL_FACE);
 	glCullFace(GL_BACK);
 	glEnable(GL_BLEND);
 	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -2248,7 +2273,7 @@ void init(void)
 	uniformInvPers = glGetUniformLocation(shaderProgram[2], "invPersMatrix");
 	glUniformMatrix4fv(uniformInvPers, 1, false, (float *)invProjection);
 	uniformViewPos = glGetUniformLocation(shaderProgram[2], "viewPos");
-	glUniform3f(uniformViewPos, cameraPos[0], cameraPos[1], cameraPos[2]);
+	glUniform3f(uniformViewPos, cameraChunkPos[0], cameraChunkPos[1], cameraChunkPos[2]);
 	uniformView2 = glGetUniformLocation(shaderProgram[2], "viewMatrix");
 	glUniformMatrix4fv(uniformView2, 1, false, (float *)view);
 	uniformWater = glGetUniformLocation(shaderProgram[2], "water");
@@ -2358,7 +2383,7 @@ void render(void)
 
 		mat4 model = GLM_MAT4_IDENTITY_INIT;
 
-		for (int i = 0; i <= chunksIFCount; i++)
+		for (int i = 0; i < chunksIFCount; i++)
 		{
 			chunkNode *c = &chunks[chunksInFront[i].id];
 			int x = chunksInFront[i].x;
@@ -2380,7 +2405,7 @@ void render(void)
 			glBindVertexArray(0);
 		}
 
-		for (int i = 0; i <= chunksIFCount; i++)
+		for (int i = 0; i < chunksIFCount; i++)
 		{
 			chunkNode *c = &chunks[chunksInFront[i].id];
 			int x = chunksInFront[i].x;
