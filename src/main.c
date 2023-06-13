@@ -192,10 +192,12 @@ const char *lightCasterVShader =
 		"layout(location=1)in vec3 aNormal;\n"
 		"layout(location=2)in vec2 aTexCoords;\n"
 		"layout(location=3)in float aTextureID;\n"
+		"layout(location=4)in float aOcclusion;\n"
 		"out vec3 FragPos;\n"
 		"out vec3 Normal;\n"
 		"out vec2 TexCoords;\n"
 		"out float TextureID;\n"
+		"out float Occlusion;\n"
 		"uniform mat4 model;\n"
 		"uniform mat4 view;\n"
 		"uniform mat4 projection;\n"
@@ -205,6 +207,7 @@ const char *lightCasterVShader =
 		" Normal=mat3(transpose(inverse(model)))*aNormal;\n"
 		" TexCoords=aTexCoords;\n"
 		" TextureID=aTextureID;\n"
+		" Occlusion=aOcclusion;\n"
 		" gl_Position=projection*view*vec4(FragPos,1.);\n"
 		"}";
 const char *lightCasterFShader =
@@ -224,6 +227,7 @@ const char *lightCasterFShader =
 		"in vec2 TexCoords;\n"
 		"in float TextureID;\n"
 		"in vec4 gl_FragCoord;\n"
+		"in float Occlusion;\n"
 		"uniform vec3 viewPos;\n"
 		"uniform Material material;\n"
 		"uniform sampler2DArray textures;\n"
@@ -240,7 +244,8 @@ const char *lightCasterFShader =
 		" vec3 viewDir=normalize(viewPos-FragPos);\n"
 		" vec3 reflectDir=reflect(-lightDir,norm);\n"
 		" float spec=pow(max(dot(viewDir,reflectDir),0.),material.shininess);\n"
-		" vec3 result=ambient+diffuse;\n"
+		" float occluse=Occlusion*.25+.25;\n"
+		" vec3 result=(ambient+diffuse)*occluse;\n"
 		" FragColor = vec4(result, tex.a);\n"
 		"}";
 
@@ -568,14 +573,16 @@ ht overworld = HT_INIT;
 typedef int id[2];
 typedef id chunk[16][256][16];
 
-typedef bool FACES[6];
+typedef int faceAO[4];
+typedef bool faces[6];
+typedef faceAO cubeAO[6];
 
 typedef struct meshCube
 {
-	ivec2 chunk;
 	vec3 position;
 	id ID;
-	FACES faces;
+	faces faces;
+	cubeAO AO;
 } meshCube;
 
 typedef struct chunkNode
@@ -954,7 +961,6 @@ void processInput(GLFWwindow *window)
 void resizeCallback(GLFWwindow *window, int width, int height)
 {
 	if (width == 0 || height == 0) return;
-	calculateFrustum();
 	screenWidth = width;
 	screenHeight = height;
 	glViewport(0, 0, width, height);
@@ -982,6 +988,8 @@ void resizeCallback(GLFWwindow *window, int width, int height)
 	float scale = 50. / screenWidth;
 	glUniform2f(uniformWorldMapScale, scale, (float)width / height * scale);
 	glUniform2f(uniformWorldMapScreen, width, height);
+
+	calculateFrustum();
 }
 
 void mouseButtonCallback(GLFWwindow *window, int button, int action, int mods)
@@ -1076,7 +1084,7 @@ void addFloat(chunkNode *c, float number)
 	}
 }
 
-int addVertex(chunkNode *c, float posX, float posY, float posZ, float normalX, float NormalY, float NormalZ, float textureCX, float textureCY, float textureID)
+int addVertex(chunkNode *c, float posX, float posY, float posZ, float normalX, float NormalY, float NormalZ, float textureCX, float textureCY, float textureID, float occlusion)
 {
 	addFloat(c, posX);
 	addFloat(c, posY);
@@ -1087,8 +1095,9 @@ int addVertex(chunkNode *c, float posX, float posY, float posZ, float normalX, f
 	addFloat(c, textureCX);
 	addFloat(c, textureCY);
 	addFloat(c, textureID);
+	addFloat(c, occlusion);
 
-	return c->verticesBufferCount / 9 - 1;
+	return c->verticesBufferCount / 10 - 1;
 }
 
 void addIndex(chunkNode *c, int index)
@@ -1114,7 +1123,6 @@ void addIndices(chunkNode *c, int i1, int i2, int i3, int j1, int j2, int j3)
 
 void generateVertices(chunkNode *chunkNodes, int init, int count)
 {
-	
 	for (int i = init; i < count; i++)
 	{
 		chunkNode *c = &chunkNodes[i];
@@ -1130,13 +1138,9 @@ void generateVertices(chunkNode *chunkNodes, int init, int count)
 		indicesBlocks = (int *)malloc(sizeof(int) * c->meshCount);
 		indicesWater = (int *)malloc(sizeof(int) * c->meshCount);
 
-		// printf("limite: %i\n", c->meshCount);
-
 		for (int j = 0; j < c->meshCount; j++)
 		{
 			meshCube *cube = &c->meshCubes[j];
-
-			// printf("i: %i\n", j);
 
 			if (cube->ID[0] == 5)
 			{
@@ -1149,7 +1153,6 @@ void generateVertices(chunkNode *chunkNodes, int init, int count)
 		}
 
 		int waterIndex = blockCount;
-		// printf("agua: %i\n", waterCount);
 
 		for (int j = 0; j < waterCount; j++)
 		{
@@ -1176,60 +1179,60 @@ void generateVertices(chunkNode *chunkNodes, int init, int count)
 
 			if (cube->faces[0])
 			{
-				int i1 = addVertex(c, pos[0] - .5, pos[1] + .5 - offset, pos[2] - .5, 0, 1, 0, 0, 0, top);
-				int i2 = addVertex(c, pos[0] - .5, pos[1] + .5 - offset, pos[2] + .5, 0, 1, 0, 0, 1, top);
-				int j1 = addVertex(c, pos[0] + .5, pos[1] + .5 - offset, pos[2] + .5, 0, 1, 0, 1, 1, top);
-				int j2 = addVertex(c, pos[0] + .5, pos[1] + .5 - offset, pos[2] - .5, 0, 1, 0, 1, 0, top);
+				int i1 = addVertex(c, pos[0] - .5, pos[1] + .5 - offset, pos[2] - .5, 0, 1, 0, 0, 0, top, cube->AO[0][3]);
+				int i2 = addVertex(c, pos[0] - .5, pos[1] + .5 - offset, pos[2] + .5, 0, 1, 0, 0, 1, top, cube->AO[0][1]);
+				int j1 = addVertex(c, pos[0] + .5, pos[1] + .5 - offset, pos[2] + .5, 0, 1, 0, 1, 1, top, cube->AO[0][0]);
+				int j2 = addVertex(c, pos[0] + .5, pos[1] + .5 - offset, pos[2] - .5, 0, 1, 0, 1, 0, top, cube->AO[0][2]);
 
 				addIndices(c, i1, i2, j1, j1, j2, i1);
 				if (j >= waterIndex) addIndices(c, i1, j2, j1, j1, i2, i1);
 			}
 			if (cube->faces[1] && pos[1] > 0)
 			{
-				int i1 = addVertex(c, pos[0] - .5, pos[1] - .5, pos[2] - .5, 0, -1, 0, 0, 0, down);
-				int i2 = addVertex(c, pos[0] + .5, pos[1] - .5, pos[2] - .5, 0, -1, 0, 1, 0, down);
-				int j1 = addVertex(c, pos[0] + .5, pos[1] - .5, pos[2] + .5, 0, -1, 0, 1, 1, down);
-				int j2 = addVertex(c, pos[0] - .5, pos[1] - .5, pos[2] + .5, 0, -1, 0, 0, 1, down);
+				int i1 = addVertex(c, pos[0] - .5, pos[1] - .5, pos[2] - .5, 0, -1, 0, 0, 0, down, cube->AO[1][3]);
+				int i2 = addVertex(c, pos[0] + .5, pos[1] - .5, pos[2] - .5, 0, -1, 0, 1, 0, down, cube->AO[1][2]);
+				int j1 = addVertex(c, pos[0] + .5, pos[1] - .5, pos[2] + .5, 0, -1, 0, 1, 1, down, cube->AO[1][0]);
+				int j2 = addVertex(c, pos[0] - .5, pos[1] - .5, pos[2] + .5, 0, -1, 0, 0, 1, down, cube->AO[1][1]);
 
 				addIndices(c, i1, i2, j1, j1, j2, i1);
 				if (j >= waterIndex) addIndices(c, i1, j2, j1, j1, i2, i1);
 			}
 			if (cube->faces[2])
 			{
-				int i1 = addVertex(c, pos[0] - .5, pos[1] - .5, pos[2] + .5, 0, 0, 1, 0, 0, side);
-				int i2 = addVertex(c, pos[0] + .5, pos[1] - .5, pos[2] + .5, 0, 0, 1, 1, 0, side);
-				int j1 = addVertex(c, pos[0] + .5, pos[1] + .5, pos[2] + .5, 0, 0, 1, 1, 1, side);
-				int j2 = addVertex(c, pos[0] - .5, pos[1] + .5, pos[2] + .5, 0, 0, 1, 0, 1, side);
+				int i1 = addVertex(c, pos[0] - .5, pos[1] - .5, pos[2] + .5, 0, 0, 1, 0, 0, side, cube->AO[2][3]);
+				int i2 = addVertex(c, pos[0] + .5, pos[1] - .5, pos[2] + .5, 0, 0, 1, 1, 0, side, cube->AO[2][2]);
+				int j1 = addVertex(c, pos[0] + .5, pos[1] + .5, pos[2] + .5, 0, 0, 1, 1, 1, side, cube->AO[2][0]);
+				int j2 = addVertex(c, pos[0] - .5, pos[1] + .5, pos[2] + .5, 0, 0, 1, 0, 1, side, cube->AO[2][1]);
 
 				addIndices(c, i1, i2, j1, j1, j2, i1);
 				if (j >= waterIndex) addIndices(c, i1, j2, j1, j1, i2, i1);
 			}
 			if (cube->faces[3])
 			{
-				int i1 = addVertex(c, pos[0] - .5, pos[1] - .5, pos[2] - .5, 0, 0, -1, 0, 0, side);
-				int i2 = addVertex(c, pos[0] - .5, pos[1] + .5, pos[2] - .5, 0, 0, -1, 0, 1, side);
-				int j1 = addVertex(c, pos[0] + .5, pos[1] + .5, pos[2] - .5, 0, 0, -1, 1, 1, side);
-				int j2 = addVertex(c, pos[0] + .5, pos[1] - .5, pos[2] - .5, 0, 0, -1, 1, 0, side);
+				int i1 = addVertex(c, pos[0] - .5, pos[1] - .5, pos[2] - .5, 0, 0, -1, 0, 0, side, cube->AO[3][3]);
+				int i2 = addVertex(c, pos[0] - .5, pos[1] + .5, pos[2] - .5, 0, 0, -1, 0, 1, side, cube->AO[3][1]);
+				int j1 = addVertex(c, pos[0] + .5, pos[1] + .5, pos[2] - .5, 0, 0, -1, 1, 1, side, cube->AO[3][0]);
+				int j2 = addVertex(c, pos[0] + .5, pos[1] - .5, pos[2] - .5, 0, 0, -1, 1, 0, side, cube->AO[3][2]);
 
 				addIndices(c, i1, i2, j1, j1, j2, i1);
 				if (j >= waterIndex) addIndices(c, i1, j2, j1, j1, i2, i1);
 			}
 			if (cube->faces[4])
 			{
-				int i1 = addVertex(c, pos[0] + .5, pos[1] - .5, pos[2] - .5, 1, 0, 0, 0, 0, side);
-				int i2 = addVertex(c, pos[0] + .5, pos[1] + .5, pos[2] - .5, 1, 0, 0, 0, 1, side);
-				int j1 = addVertex(c, pos[0] + .5, pos[1] + .5, pos[2] + .5, 1, 0, 0, 1, 1, side);
-				int j2 = addVertex(c, pos[0] + .5, pos[1] - .5, pos[2] + .5, 1, 0, 0, 1, 0, side);
+				int i1 = addVertex(c, pos[0] + .5, pos[1] - .5, pos[2] - .5, 1, 0, 0, 0, 0, side, cube->AO[4][3]);
+				int i2 = addVertex(c, pos[0] + .5, pos[1] + .5, pos[2] - .5, 1, 0, 0, 0, 1, side, cube->AO[4][1]);
+				int j1 = addVertex(c, pos[0] + .5, pos[1] + .5, pos[2] + .5, 1, 0, 0, 1, 1, side, cube->AO[4][0]);
+				int j2 = addVertex(c, pos[0] + .5, pos[1] - .5, pos[2] + .5, 1, 0, 0, 1, 0, side, cube->AO[4][2]);
 
 				addIndices(c, i1, i2, j1, j1, j2, i1);
 				if (j >= waterIndex) addIndices(c, i1, j2, j1, j1, i2, i1);
 			}
 			if (cube->faces[5])
 			{
-				int i1 = addVertex(c, pos[0] - .5, pos[1] - .5, pos[2] - .5, -1, 0, 0, 0, 0, side);
-				int i2 = addVertex(c, pos[0] - .5, pos[1] - .5, pos[2] + .5, -1, 0, 0, 1, 0, side);
-				int j1 = addVertex(c, pos[0] - .5, pos[1] + .5, pos[2] + .5, -1, 0, 0, 1, 1, side);
-				int j2 = addVertex(c, pos[0] - .5, pos[1] + .5, pos[2] - .5, -1, 0, 0, 0, 1, side);
+				int i1 = addVertex(c, pos[0] - .5, pos[1] - .5, pos[2] - .5, -1, 0, 0, 0, 0, side, cube->AO[5][3]);
+				int i2 = addVertex(c, pos[0] - .5, pos[1] - .5, pos[2] + .5, -1, 0, 0, 1, 0, side, cube->AO[5][2]);
+				int j1 = addVertex(c, pos[0] - .5, pos[1] + .5, pos[2] + .5, -1, 0, 0, 1, 1, side, cube->AO[5][0]);
+				int j2 = addVertex(c, pos[0] - .5, pos[1] + .5, pos[2] - .5, -1, 0, 0, 0, 1, side, cube->AO[5][1]);
 
 				addIndices(c, i1, i2, j1, j1, j2, i1);
 				if (j >= waterIndex) addIndices(c, i1, j2, j1, j1, i2, i1);
@@ -1237,6 +1240,37 @@ void generateVertices(chunkNode *chunkNodes, int init, int count)
 		}
 	}
 }
+
+float vertexAO(bool side1, bool side2, bool corner) {
+  if(side1 && side2) {
+    return 0;
+  }
+  return 3 - ((int)side1 + (int)side2 + (int)corner);
+}
+
+int vertexes[8][3] = {
+	{-1, 1, -1},
+	{-1, 1, 1},
+	{1, 1, 1},
+	{1, 1, -1},
+	{-1, -1, -1},
+	{1, -1, -1},
+	{1, -1, 1},
+	{-1, -1, 1},
+};
+
+int normals[6][3] = {
+	{0, 1, 0},
+	{0, -1, 0},
+	{0, 0, 1},
+	{0, 0, -1},
+	{1, 0, 0},
+	{-1, 0, 0}
+};
+
+int up[3] = {0, 1, 0};
+int north[3] = {0, 0, 1};
+int right[3] = {1, 0, 0};
 
 void generateMesh(chunkNode *chunkNodes, int init, int count)
 {
@@ -1254,29 +1288,107 @@ void generateMesh(chunkNode *chunkNodes, int init, int count)
 				{
 					meshCube cube = {
 							.ID = {c->chunk[x][y][z][0], c->chunk[x][y][z][1]},
-							.faces = {false, false, false, false, false, false},
-							.chunk = {posX, posZ}};
+							.faces = {false, false, false, false, false, false}};
 
 					if (cube.ID[0] == 0)
 						continue;
 
 					if (hasAir(c, x, y + 1, z, cube.ID))
+					{
 						cube.faces[0] = true;
+					}
 					if (hasAir(c, x, y - 1, z, cube.ID))
+					{
 						cube.faces[1] = true;
+					}
 					if (hasAir(c, x, y, z + 1, cube.ID))
+					{
 						cube.faces[2] = true;
+					}
 					if (hasAir(c, x, y, z - 1, cube.ID))
+					{
 						cube.faces[3] = true;
+					}
 					if (hasAir(c, x + 1, y, z, cube.ID))
+					{
 						cube.faces[4] = true;
+					}
 					if (hasAir(c, x - 1, y, z, cube.ID))
+					{
 						cube.faces[5] = true;
+					}
 
 					for (int i = 0; i < 6; i++)
 					{
 						if (cube.faces[i])
 						{
+							bool isSolid[3][3][3];
+
+							if (cube.faces[1] || cube.faces[5]) isSolid[0][0][1] = !hasAir(c, x - 1, y - 1, z, cube.ID);
+							if (cube.faces[3] || cube.faces[5]) isSolid[0][1][0] = !hasAir(c, x - 1, y, z - 1, cube.ID);
+							if (cube.faces[2] || cube.faces[5]) isSolid[0][1][2] = !hasAir(c, x - 1, y, z + 1, cube.ID);
+							if (cube.faces[0] || cube.faces[5]) isSolid[0][2][1] = !hasAir(c, x - 1, y + 1, z, cube.ID);
+							if (cube.faces[1] || cube.faces[3]) isSolid[1][0][0] = !hasAir(c, x, y - 1, z - 1, cube.ID);
+							if (cube.faces[1] || cube.faces[2]) isSolid[1][0][2] = !hasAir(c, x, y - 1, z + 1, cube.ID);
+							if (cube.faces[0] || cube.faces[3]) isSolid[1][2][0] = !hasAir(c, x, y + 1, z - 1, cube.ID);
+							if (cube.faces[0] || cube.faces[2]) isSolid[1][2][2] = !hasAir(c, x, y + 1, z + 1, cube.ID);
+							if (cube.faces[1] || cube.faces[4]) isSolid[2][0][1] = !hasAir(c, x + 1, y - 1, z, cube.ID);
+							if (cube.faces[3] || cube.faces[4]) isSolid[2][1][0] = !hasAir(c, x + 1, y, z - 1, cube.ID);
+							if (cube.faces[2] || cube.faces[4]) isSolid[2][1][2] = !hasAir(c, x + 1, y, z + 1, cube.ID);
+							if (cube.faces[0] || cube.faces[4]) isSolid[2][2][1] = !hasAir(c, x + 1, y + 1, z, cube.ID);
+
+							if (cube.faces[0] || cube.faces[3] || cube.faces[5]) isSolid[0][0][0] = !hasAir(c, x - 1, y - 1, z - 1, cube.ID);
+							if (cube.faces[1] || cube.faces[2] || cube.faces[5]) isSolid[0][0][2] = !hasAir(c, x - 1, y - 1, z + 1, cube.ID);
+							if (cube.faces[0] || cube.faces[3] || cube.faces[5]) isSolid[0][2][0] = !hasAir(c, x - 1, y + 1, z - 1, cube.ID);
+							if (cube.faces[0] || cube.faces[2] || cube.faces[5]) isSolid[0][2][2] = !hasAir(c, x - 1, y + 1, z + 1, cube.ID);
+							if (cube.faces[1] || cube.faces[3] || cube.faces[4]) isSolid[2][0][0] = !hasAir(c, x + 1, y - 1, z - 1, cube.ID);
+							if (cube.faces[0] || cube.faces[3] || cube.faces[4]) isSolid[2][2][0] = !hasAir(c, x + 1, y + 1, z - 1, cube.ID);
+							if (cube.faces[1] || cube.faces[2] || cube.faces[4]) isSolid[2][0][2] = !hasAir(c, x + 1, y - 1, z + 1, cube.ID);
+							if (cube.faces[0] || cube.faces[2] || cube.faces[4]) isSolid[2][2][2] = !hasAir(c, x + 1, y + 1, z + 1, cube.ID);
+
+							if (cube.faces[0])
+							{
+								cube.AO[0][0] = vertexAO(isSolid[1][2][2], isSolid[2][2][1], isSolid[2][2][2]);
+								cube.AO[0][1] = vertexAO(isSolid[1][2][2], isSolid[0][2][1], isSolid[0][2][2]);
+								cube.AO[0][2] = vertexAO(isSolid[1][2][0], isSolid[2][2][1], isSolid[2][2][0]);
+								cube.AO[0][3] = vertexAO(isSolid[1][2][0], isSolid[0][2][1], isSolid[0][2][0]);
+							}
+							if (cube.faces[1])
+							{
+								cube.AO[1][0] = vertexAO(isSolid[1][0][2], isSolid[2][0][1], isSolid[2][0][2]);
+								cube.AO[1][1] = vertexAO(isSolid[1][0][2], isSolid[0][0][1], isSolid[0][0][2]);
+								cube.AO[1][2] = vertexAO(isSolid[1][0][0], isSolid[2][0][1], isSolid[2][0][0]);
+								cube.AO[1][3] = vertexAO(isSolid[1][0][0], isSolid[0][0][1], isSolid[0][0][0]);
+							}
+							if (cube.faces[2])
+							{
+								cube.AO[2][0] = vertexAO(isSolid[1][2][2], isSolid[2][1][2], isSolid[2][2][2]);
+								cube.AO[2][1] = vertexAO(isSolid[1][2][2], isSolid[0][1][2], isSolid[0][2][2]);
+								cube.AO[2][2] = vertexAO(isSolid[1][0][2], isSolid[2][1][2], isSolid[2][0][2]);
+								cube.AO[2][3] = vertexAO(isSolid[1][0][2], isSolid[0][1][2], isSolid[0][0][2]);
+							}
+							if (cube.faces[3])
+							{
+								cube.AO[3][0] = vertexAO(isSolid[1][2][0], isSolid[2][1][0], isSolid[2][2][0]);
+								cube.AO[3][1] = vertexAO(isSolid[1][2][0], isSolid[0][1][0], isSolid[0][2][0]);
+								cube.AO[3][2] = vertexAO(isSolid[1][0][0], isSolid[2][1][0], isSolid[2][0][0]);
+								cube.AO[3][3] = vertexAO(isSolid[1][0][0], isSolid[0][1][0], isSolid[0][0][0]);
+							}
+							if (cube.faces[4])
+							{
+								cube.AO[4][0] = vertexAO(isSolid[2][2][1], isSolid[2][1][2], isSolid[2][2][2]);
+								cube.AO[4][1] = vertexAO(isSolid[2][2][1], isSolid[2][1][0], isSolid[2][2][0]);
+								cube.AO[4][2] = vertexAO(isSolid[2][0][1], isSolid[2][1][2], isSolid[2][0][2]);
+								cube.AO[4][3] = vertexAO(isSolid[2][0][1], isSolid[2][1][0], isSolid[2][0][0]);
+							}
+							if (cube.faces[5])
+							{
+								cube.AO[5][0] = vertexAO(isSolid[0][2][1], isSolid[0][1][2], isSolid[0][2][2]);
+								cube.AO[5][1] = vertexAO(isSolid[0][2][1], isSolid[0][1][0], isSolid[0][2][0]);
+								cube.AO[5][2] = vertexAO(isSolid[0][0][1], isSolid[0][1][2], isSolid[0][0][2]);
+								cube.AO[5][3] = vertexAO(isSolid[0][0][1], isSolid[0][1][0], isSolid[0][0][0]);
+							}
+							
 							vec3 position = {x, y, z};
 							glm_vec3_copy(position, cube.position);
 							c->meshCubes[c->meshCount++] = cube;
@@ -1286,6 +1398,7 @@ void generateMesh(chunkNode *chunkNodes, int init, int count)
 								c->meshLimit *= 2;
 								c->meshCubes = (meshCube *)realloc(c->meshCubes, sizeof(meshCube) * c->meshLimit);
 							}
+							
 							break;
 						}
 					}
@@ -1648,7 +1761,7 @@ void generateChunkNode(ht *dimension, int posX, int posZ, chunkNode **chunkNodes
 	chunkPtr->meshCount = 0;
 	chunkPtr->verticesBufferCount = 0;
 	chunkPtr->meshLimit = 1024;
-	chunkPtr->verticesBufferLimit = 9 * 1024;
+	chunkPtr->verticesBufferLimit = 10 * 1024;
 	chunkPtr->indicesBufferLimit = 6 * 1024;
 
 	chunkPtr->meshCubes = (meshCube *)malloc(chunkPtr->meshLimit * sizeof(meshCube));
@@ -1687,14 +1800,16 @@ void addVBO(chunkNode *c)
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, c->EBO);
 	glBufferData(GL_ELEMENT_ARRAY_BUFFER, c->indicesBufferCount * sizeof(int), c->indicesBuffer, GL_STATIC_DRAW);
 
-	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 9 * sizeof(float), (void *)0);
+	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 10 * sizeof(float), (void *)0);
 	glEnableVertexAttribArray(0);
-	glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 9 * sizeof(float), (void *)(3 * sizeof(float)));
+	glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 10 * sizeof(float), (void *)(3 * sizeof(float)));
 	glEnableVertexAttribArray(1);
-	glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 9 * sizeof(float), (void *)(6 * sizeof(float)));
+	glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 10 * sizeof(float), (void *)(6 * sizeof(float)));
 	glEnableVertexAttribArray(2);
-	glVertexAttribPointer(3, 1, GL_FLOAT, GL_FALSE, 9 * sizeof(float), (void *)(8 * sizeof(float)));
+	glVertexAttribPointer(3, 1, GL_FLOAT, GL_FALSE, 10 * sizeof(float), (void *)(8 * sizeof(float)));
 	glEnableVertexAttribArray(3);
+	glVertexAttribPointer(4, 1, GL_FLOAT, GL_FALSE, 10 * sizeof(float), (void *)(9 * sizeof(float)));
+	glEnableVertexAttribArray(4);
 }
 
 int viewDistance = 11;
