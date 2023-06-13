@@ -1337,7 +1337,7 @@ void generateMesh(chunkNode *chunkNodes, int init, int count)
 							if (cube.faces[2] || cube.faces[4]) isSolid[2][1][2] = !hasAir(c, x + 1, y, z + 1, cube.ID);
 							if (cube.faces[0] || cube.faces[4]) isSolid[2][2][1] = !hasAir(c, x + 1, y + 1, z, cube.ID);
 
-							if (cube.faces[0] || cube.faces[3] || cube.faces[5]) isSolid[0][0][0] = !hasAir(c, x - 1, y - 1, z - 1, cube.ID);
+							if (cube.faces[1] || cube.faces[3] || cube.faces[5]) isSolid[0][0][0] = !hasAir(c, x - 1, y - 1, z - 1, cube.ID);
 							if (cube.faces[1] || cube.faces[2] || cube.faces[5]) isSolid[0][0][2] = !hasAir(c, x - 1, y - 1, z + 1, cube.ID);
 							if (cube.faces[0] || cube.faces[3] || cube.faces[5]) isSolid[0][2][0] = !hasAir(c, x - 1, y + 1, z - 1, cube.ID);
 							if (cube.faces[0] || cube.faces[2] || cube.faces[5]) isSolid[0][2][2] = !hasAir(c, x - 1, y + 1, z + 1, cube.ID);
@@ -1846,8 +1846,6 @@ void calcPos(void)
 	{
 		GET_POS(cameraChunk[0], cameraChunk[1])
 	}
-
-	// printf("%i, %i\n", cameraChunk[0], cameraChunk[1]);
 }
 
 void calcMap(void)
