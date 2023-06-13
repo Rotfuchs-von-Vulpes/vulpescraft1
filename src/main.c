@@ -1509,13 +1509,13 @@ void generateChunk(chunkNode *c, int posX, int posZ)
 				}
 				else if (y < height)
 				{
-					c->chunk[x][y][z][0] = y <= 60 ? 6 : 2;
+					c->chunk[x][y][z][0] = height <= 60 ? 6 : 2;
 					c->chunk[x][y][z][1] = 0;
 				}
 				else if (y == height)
 				{
-					c->chunk[x][y][z][0] = y <= 60 ? 6 : 2;
-					c->chunk[x][y][z][1] = y <= 60 ? 0 : 1;
+					c->chunk[x][y][z][0] = height <= 60 ? 6 : 2;
+					c->chunk[x][y][z][1] = height <= 60 ? 0 : 1;
 				}
 				else if (y <= 59)
 				{
