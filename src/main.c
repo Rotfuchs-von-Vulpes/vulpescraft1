@@ -244,7 +244,7 @@ const char *lightCasterFShader =
 		" vec3 viewDir=normalize(viewPos-FragPos);\n"
 		" vec3 reflectDir=reflect(-lightDir,norm);\n"
 		" float spec=pow(max(dot(viewDir,reflectDir),0.),material.shininess);\n"
-		" float occluse=Occlusion*.25+.25;\n"
+		" float occluse=.25*Occlusion+.25;\n"
 		" vec3 result=(ambient+diffuse)*occluse;\n"
 		" FragColor = vec4(result, tex.a);\n"
 		"}";
@@ -1121,6 +1121,11 @@ void addIndices(chunkNode *c, int i1, int i2, int i3, int j1, int j2, int j3)
 	addIndex(c, j3);
 }
 
+bool toFlipe(float a00, float a01, float a10, float a11)
+{
+	return a00 + a11 > a01 + a10;
+}
+
 void generateVertices(chunkNode *chunkNodes, int init, int count)
 {
 	for (int i = init; i < count; i++)
@@ -1184,7 +1189,11 @@ void generateVertices(chunkNode *chunkNodes, int init, int count)
 				int j1 = addVertex(c, pos[0] + .5, pos[1] + .5 - offset, pos[2] + .5, 0, 1, 0, 1, 1, top, cube->AO[0][0]);
 				int j2 = addVertex(c, pos[0] + .5, pos[1] + .5 - offset, pos[2] - .5, 0, 1, 0, 1, 0, top, cube->AO[0][2]);
 
-				addIndices(c, i1, i2, j1, j1, j2, i1);
+				if (toFlipe(cube->AO[0][2], cube->AO[0][3], cube->AO[0][0], cube->AO[0][1]))
+					addIndices(c, i2, j1, j2, j2, i1, i2);
+				else
+					addIndices(c, i1, i2, j1, j1, j2, i1);
+
 				if (j >= waterIndex) addIndices(c, i1, j2, j1, j1, i2, i1);
 			}
 			if (cube->faces[1] && pos[1] > 0)
@@ -1194,7 +1203,11 @@ void generateVertices(chunkNode *chunkNodes, int init, int count)
 				int j1 = addVertex(c, pos[0] + .5, pos[1] - .5, pos[2] + .5, 0, -1, 0, 1, 1, down, cube->AO[1][0]);
 				int j2 = addVertex(c, pos[0] - .5, pos[1] - .5, pos[2] + .5, 0, -1, 0, 0, 1, down, cube->AO[1][1]);
 
-				addIndices(c, i1, i2, j1, j1, j2, i1);
+				if (toFlipe(cube->AO[1][2], cube->AO[1][3], cube->AO[1][0], cube->AO[1][1]))
+					addIndices(c, i2, j1, j2, j2, i1, i2);
+				else
+					addIndices(c, i1, i2, j1, j1, j2, i1);
+
 				if (j >= waterIndex) addIndices(c, i1, j2, j1, j1, i2, i1);
 			}
 			if (cube->faces[2])
@@ -1204,7 +1217,11 @@ void generateVertices(chunkNode *chunkNodes, int init, int count)
 				int j1 = addVertex(c, pos[0] + .5, pos[1] + .5, pos[2] + .5, 0, 0, 1, 1, 1, side, cube->AO[2][0]);
 				int j2 = addVertex(c, pos[0] - .5, pos[1] + .5, pos[2] + .5, 0, 0, 1, 0, 1, side, cube->AO[2][1]);
 
-				addIndices(c, i1, i2, j1, j1, j2, i1);
+				if (toFlipe(cube->AO[2][2], cube->AO[2][3], cube->AO[2][0], cube->AO[2][1]))
+					addIndices(c, i2, j1, j2, j2, i1, i2);
+				else
+					addIndices(c, i1, i2, j1, j1, j2, i1);
+
 				if (j >= waterIndex) addIndices(c, i1, j2, j1, j1, i2, i1);
 			}
 			if (cube->faces[3])
@@ -1214,7 +1231,11 @@ void generateVertices(chunkNode *chunkNodes, int init, int count)
 				int j1 = addVertex(c, pos[0] + .5, pos[1] + .5, pos[2] - .5, 0, 0, -1, 1, 1, side, cube->AO[3][0]);
 				int j2 = addVertex(c, pos[0] + .5, pos[1] - .5, pos[2] - .5, 0, 0, -1, 1, 0, side, cube->AO[3][2]);
 
-				addIndices(c, i1, i2, j1, j1, j2, i1);
+				if (toFlipe(cube->AO[3][2], cube->AO[3][3], cube->AO[3][0], cube->AO[3][1]))
+					addIndices(c, i2, j1, j2, j2, i1, i2);
+				else
+					addIndices(c, i1, i2, j1, j1, j2, i1);
+
 				if (j >= waterIndex) addIndices(c, i1, j2, j1, j1, i2, i1);
 			}
 			if (cube->faces[4])
@@ -1224,7 +1245,11 @@ void generateVertices(chunkNode *chunkNodes, int init, int count)
 				int j1 = addVertex(c, pos[0] + .5, pos[1] + .5, pos[2] + .5, 1, 0, 0, 1, 1, side, cube->AO[4][0]);
 				int j2 = addVertex(c, pos[0] + .5, pos[1] - .5, pos[2] + .5, 1, 0, 0, 1, 0, side, cube->AO[4][2]);
 
-				addIndices(c, i1, i2, j1, j1, j2, i1);
+				if (toFlipe(cube->AO[4][2], cube->AO[4][3], cube->AO[4][0], cube->AO[4][1]))
+					addIndices(c, i2, j1, j2, j2, i1, i2);
+				else
+					addIndices(c, i1, i2, j1, j1, j2, i1);
+
 				if (j >= waterIndex) addIndices(c, i1, j2, j1, j1, i2, i1);
 			}
 			if (cube->faces[5])
@@ -1234,7 +1259,11 @@ void generateVertices(chunkNode *chunkNodes, int init, int count)
 				int j1 = addVertex(c, pos[0] - .5, pos[1] + .5, pos[2] + .5, -1, 0, 0, 1, 1, side, cube->AO[5][0]);
 				int j2 = addVertex(c, pos[0] - .5, pos[1] + .5, pos[2] - .5, -1, 0, 0, 0, 1, side, cube->AO[5][1]);
 
-				addIndices(c, i1, i2, j1, j1, j2, i1);
+				if (toFlipe(cube->AO[5][2], cube->AO[5][3], cube->AO[5][0], cube->AO[5][1]))
+					addIndices(c, i2, j1, j2, j2, i1, i2);
+				else
+					addIndices(c, i1, i2, j1, j1, j2, i1);
+
 				if (j >= waterIndex) addIndices(c, i1, j2, j1, j1, i2, i1);
 			}
 		}
